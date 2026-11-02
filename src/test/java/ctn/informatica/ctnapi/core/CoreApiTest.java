@@ -22,7 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@TestPropertySource(properties = "ctnapi.core-api-key=clave-core-test")
+@TestPropertySource(properties = {"ctnapi.core-api-key=clave-core-test", "ctnapi.core-write-enabled=true"})
 class CoreApiTest {
 
     @Autowired

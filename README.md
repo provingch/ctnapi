@@ -35,10 +35,14 @@ README de `ctn-sca-info` (sección "APIs para apps externas").
   `SERVER_ADDRESS` con la IP privada de ctnapi; permitir el puerto 8080 solo desde contenedores autorizados y bloquear
   `/api/core/` en el nginx público salvo para esas IPs. No exponer ese endpoint directamente a Internet. La clave debe
   ser aleatoria, compartida solo por ctnapi y los clientes internos autorizados, y distinta de las claves de las apps.
+- Durante la transición, SCA sigue siendo la autoridad del Core. ctnapi consulta periódicamente una instantánea
+  privada de solo lectura desde SCA por HTTP; no hay conexiones entre bases. Las escrituras del Core en ctnapi quedan
+  bloqueadas por defecto (`CORE_WRITE_ENABLED=false`), para que la sincronización no pise cambios hechos por otra app.
 
 La reorganización está en curso: la migración 001 crea el esquema destino y la API interna del núcleo ya está
-implementada. Falta integrar los clientes (incluido SCA) y trasladar datos históricos antes del corte. No ejecutar
-todavía migraciones en producción ni hacer el corte.
+implementada. La sincronización SCA → ctnapi del Core escolar está preparada, pero no queda activa hasta configurar
+ambos servidores y validar el primer lote. UCTN y SHME siguen usando sus APIs y datos actuales en SCA; no se cambia
+el tráfico de las apps existentes ni se migran sus datos custom.
 
 ### Transición de enfermería desde SCA
 
@@ -46,11 +50,27 @@ SHME ya está implementado y hoy usa la API de enfermería que corre dentro de S
 ctnapi, pero **no debe cambiarse la URL de SHME todavía**: la instancia nueva depende de las tablas `alumno`, `curso`
 y `especialidad` del Core de ctnapi, además de los datos `enf_*` y los usuarios/sesiones propios de enfermería.
 
-El cambio seguro requiere desplegar ctnapi en paralelo, preparar e importar los datos escolares y de enfermería
-preservando IDs, validar el contrato con SHME en un entorno de prueba y luego cambiar en SHME únicamente la URL base
-(manteniendo la clave de API). Durante esa transición, no desactivar la API ni borrar las tablas en SCA hasta confirmar
-que SHME opera contra ctnapi y que los datos están completos. La implementación alojada en SCA queda como origen
-actual; la de ctnapi es el destino preparado, no el servicio activo de SHME todavía.
+Por decisión actual, SHME permanece conectado a SCA y no se cambia su URL ni se migran ahora sus datos. ctnapi tiene
+una implementación de enfermería preparada como posible destino futuro, pero no forma parte de la sincronización del
+Core escolar. Si más adelante se decide mover SHME, será una migración separada que requiere importar sus datos y
+validar la API antes de cambiar el cliente.
+
+### Sincronización del Core escolar
+
+La sincronización actual mueve solo el Core escolar: especialidades, cursos, cursos-base, materias, perfiles
+institucionales (sin usuario/contraseña/OAuth), alumnos, vínculos familiares, historial de cursos, asignaciones y
+códigos de conducta. No mueve anotaciones, enfermería ni otros datos de las apps. SCA expone
+`GET /api/internal/core/snapshot` con `X-Core-Sync-Key`; ctnapi lo consulta por HTTP cada 5 minutos por defecto y
+aplica la instantánea completa en una única transacción. Los IDs de SCA se conservan. Si falla una referencia o hay
+un registro de ctnapi que no puede borrarse por sus FK, se revierte el lote y queda vigente la sincronización anterior.
+
+Para habilitarlo, configurar la misma clave aleatoria de al menos 32 caracteres como `CORE_SYNC_API_KEY` en SCA y
+ctnapi, establecer en SCA `CORE_SYNC_ALLOWED_IP` con la IP/CIDR privada de ctnapi y ejecutar la configuración de
+nginx de SCA. En ctnapi configurar `CORE_SYNC_ENABLED=true` y
+`CORE_SYNC_SOURCE_URL=http://<IP_PRIVADA_SCA>:8080/api/internal/core/snapshot`; ajustar también reglas de firewall
+para que el endpoint de SCA solo sea alcanzable desde ctnapi. Mantener el sync apagado hasta que ambos despliegues,
+la clave y la ruta privada estén verificados. Los errores se registran en el log del servicio y se reintentan en el
+siguiente intervalo; la importación no deja un lote parcial.
 
 ### API interna del núcleo
 
@@ -174,6 +194,7 @@ journalctl -u ctnapi-backup.service -n 20        # resultado
 
 Portado y adaptado el 2026-11-02. En curso: separar el núcleo escolar y mover los datos históricos desde la base
 anterior; no se ha hecho corte de producción. El Core y la API de enfermería destino están implementados en ctnapi;
-quedan pendientes la migración de datos, la validación con SHME y el cambio de cliente. La API de enfermería en SCA
-sigue siendo la instancia activa hasta completar esa transición. También queda pendiente la API de GEMA (hoy en SCA,
+la sincronización del Core está preparada, pero requiere configurar ambas instancias y validar el primer lote. La API
+de enfermería en SCA sigue siendo la instancia activa y todavía no se migraron los datos de UCTN/SHME. También queda
+pendiente la API de GEMA (hoy en SCA,
 `/api/integracion/**`).

@@ -29,22 +29,25 @@ public class CoreSecurityConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain coreFilterChain(HttpSecurity http,
-            @Value("${ctnapi.core-api-key:}") String apiKey) throws Exception {
+            @Value("${ctnapi.core-api-key:}") String apiKey,
+            @Value("${ctnapi.core-write-enabled:false}") boolean writeEnabled) throws Exception {
         http
             .securityMatcher("/api/core/**")
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth.anyRequest().hasRole("SERVICE_CORE"))
-            .addFilterBefore(new ServiceKeyFilter(apiKey), UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(new ServiceKeyFilter(apiKey, writeEnabled), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
     static class ServiceKeyFilter extends OncePerRequestFilter {
 
         private final byte[] expected;
+        private final boolean writeEnabled;
 
-        ServiceKeyFilter(String apiKey) {
+        ServiceKeyFilter(String apiKey, boolean writeEnabled) {
             expected = apiKey == null || apiKey.isBlank() ? null : sha256(apiKey);
+            this.writeEnabled = writeEnabled;
         }
 
         @Override
@@ -57,6 +60,10 @@ public class CoreSecurityConfig {
             String provided = request.getHeader("X-Service-Key");
             if (provided == null || !MessageDigest.isEqual(sha256(provided), expected)) {
                 write(response, 401, "Credencial de servicio inválida o ausente");
+                return;
+            }
+            if (!writeEnabled && List.of("POST", "PUT", "PATCH", "DELETE").contains(request.getMethod())) {
+                write(response, 503, "La escritura del Core está deshabilitada mientras SCA sea la fuente de datos");
                 return;
             }
             if (request.getContentLengthLong() > MAX_REQUEST_BYTES) {

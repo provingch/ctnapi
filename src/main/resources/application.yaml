@@ -33,6 +33,14 @@ ctnapi:
   jwt-secret: ${CTNAPI_JWT_SECRET}
   # Clave de servicio independiente para el núcleo escolar. Vacía = endpoints deshabilitados (503).
   core-api-key: ${CORE_API_KEY:}
+  # SCA sigue siendo la autoridad: escritura directa en el Core de ctnapi queda apagada hasta el corte.
+  core-write-enabled: ${CORE_WRITE_ENABLED:false}
+  core-sync:
+    enabled: ${CORE_SYNC_ENABLED:false}
+    source-url: ${CORE_SYNC_SOURCE_URL:}
+    api-key: ${CORE_SYNC_API_KEY:}
+    interval-ms: ${CORE_SYNC_INTERVAL_MS:300000}
+    initial-delay-ms: ${CORE_SYNC_INITIAL_DELAY_MS:15000}
 
 anotaciones:
   api-key: ${ANOTACIONES_API_KEY:}  # vacío = API /api/anotaciones deshabilitada (503)

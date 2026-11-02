@@ -1,0 +1,17 @@
+[Unit]
+Description=Copia de seguridad de los datos de ctnapi
+After=network-online.target mariadb.service mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ctnapi
+Group=ctnapi
+ExecStart=/opt/ctnapi/scripts/backup-db.sh
+Nice=10
+IOSchedulingClass=idle
+ProtectSystem=strict
+ReadWritePaths=/var/backups/ctnapi
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true

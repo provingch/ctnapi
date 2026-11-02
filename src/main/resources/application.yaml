@@ -1,0 +1,39 @@
+server:
+  port: 8080
+  # Solo escucha en loopback: lo único que lo alcanza es el nginx del mismo contenedor.
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  # Detrás de nginx: toma la IP real del cliente de X-Forwarded-For (el bloqueo por intentos de login de
+  # enfermería es por usuario *y por IP*; sin esto todas las IPs serían 127.0.0.1).
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      internal-proxies: 127\.0\.0\.1|::1
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+
+spring:
+  application:
+    name: ctnapi
+  servlet:
+    multipart:
+      max-file-size: 6MB      # foto de evidencia de la app de anotaciones (tope real 5 MB, lo valida la API)
+      max-request-size: 10MB
+
+ctnapi:
+  # Firma del token de sesión de enfermería. SIN valor por defecto a propósito: si falta, la app no arranca.
+  # Mínimo 32 caracteres. Es distinto del JWT_SECRET de SCA.
+  jwt-secret: ${CTNAPI_JWT_SECRET}
+
+anotaciones:
+  api-key: ${ANOTACIONES_API_KEY:}  # vacío = API /api/anotaciones deshabilitada (503)
+
+enfermeria:
+  api-key: ${ENFERMERIA_API_KEY:}   # vacío = API /api/enfermeria deshabilitada (503)
+  token-horas: 12                   # vigencia del token de login de enfermería

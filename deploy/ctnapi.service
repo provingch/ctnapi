@@ -1,0 +1,21 @@
+[Unit]
+Description=ctnapi - API de servicios externos del CTN
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ctnapi
+Group=ctnapi
+EnvironmentFile=/etc/ctnapi/ctnapi.env
+WorkingDirectory=/opt/ctnapi
+ExecStart=/usr/bin/java -Xms128m -Xmx384m -jar /opt/ctnapi/ctnapi.jar
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Copia de seguridad diaria de ctnapi a las 20:00 (hora de Paraguay)
+
+[Timer]
+# Todos los días a las 20:00, hora de Asunción (independiente de la zona horaria del contenedor).
+OnCalendar=*-*-* 20:00:00 America/Asuncion
+# Si el contenedor estaba apagado a las 20:00, la copia corre apenas arranca.
+Persistent=true
+Unit=ctnapi-backup.service
+
+[Install]
+WantedBy=timers.target

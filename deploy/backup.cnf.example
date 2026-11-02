@@ -1,0 +1,4 @@
+# /etc/ctnapi/backup.cnf   (chmod 600, dueño ctnapi:ctnapi) — credenciales del usuario ctnapi_backup
+[client]
+user=ctnapi_backup
+password=CAMBIAR_ESTA_CLAVE

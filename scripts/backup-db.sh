@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Copia de seguridad diaria de los datos de ctnapi (la corre ctnapi-backup.timer todos los días a las 20:00).
 #
-# Por defecto respalda SOLO las tablas que ctnapi administra (anotaciones y enfermería). Las demás tablas
-# (alumnos, usuarios, notas...) son de SCA y se respaldan con el deploy/backup de SCA. Con BACKUP_SCOPE=all
-# se vuelca toda la base.
+# Por defecto respalda todas las tablas de ctnapi_db, propiedad exclusiva de ctnapi.
 #
 # Configuración: /etc/ctnapi/backup.env (variables) y /etc/ctnapi/backup.cnf (credenciales, chmod 600).
 set -euo pipefail
@@ -15,19 +13,10 @@ ENV_FILE="${CTNAPI_BACKUP_ENV:-/etc/ctnapi/backup.env}"
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/ctnapi}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
-DB_NAME="${CTN_DB_NAME:-ctndb}"
-DB_HOST="${CTN_DB_HOST:-localhost}"
+DB_NAME="${CTN_DB_NAME:-ctnapi_db}"
+DB_HOST="${CTN_DB_HOST:-ctnapi-db}"
 DB_PORT="${CTN_DB_PORT:-3306}"
 CNF="${BACKUP_CNF:-/etc/ctnapi/backup.cnf}"
-SCOPE="${BACKUP_SCOPE:-own}"
-
-# Tablas propias de ctnapi (ver database/migrations/007, 008, 009 y 013).
-OWN_TABLES=(
-  tipo_anotacion anotacion anotacion_foto
-  enf_ficha enf_tutor enf_alergia enf_detalle_alergia enf_usuario enf_insumo
-  enf_consulta enf_detalle_consulta enf_solicitud_insumo enf_detalle_solicitud_insumo
-  enf_reporte enf_consulta_personal enf_detalle_consulta_personal
-)
 
 if command -v mariadb-dump >/dev/null 2>&1; then DUMP=mariadb-dump
 elif command -v mysqldump >/dev/null 2>&1; then DUMP=mysqldump
@@ -36,18 +25,14 @@ else echo "ERROR: no se encontró mariadb-dump ni mysqldump" >&2; exit 1; fi
 
 mkdir -p "$BACKUP_DIR"
 STAMP="$(TZ=America/Asuncion date +%Y%m%d-%H%M%S)"
-DEST="$BACKUP_DIR/ctnapi-$SCOPE-$STAMP.sql.gz"
+DEST="$BACKUP_DIR/ctnapi-$STAMP.sql.gz"
 TMP="$DEST.tmp"
 trap 'rm -f "$TMP"' EXIT
 
 ARGS=(--defaults-extra-file="$CNF" --host="$DB_HOST" --port="$DB_PORT"
       --single-transaction --quick --skip-lock-tables --no-tablespaces
       --default-character-set=utf8mb4 --hex-blob)
-if [ "$SCOPE" = "all" ]; then
-  "$DUMP" "${ARGS[@]}" --routines --triggers "$DB_NAME" | gzip -9 > "$TMP"
-else
-  "$DUMP" "${ARGS[@]}" "$DB_NAME" "${OWN_TABLES[@]}" | gzip -9 > "$TMP"
-fi
+"$DUMP" "${ARGS[@]}" --routines --triggers "$DB_NAME" | gzip -9 > "$TMP"
 
 # Verificación: el gzip tiene que estar íntegro y el volcado tiene que haber terminado ("Dump completed").
 gzip -t "$TMP"

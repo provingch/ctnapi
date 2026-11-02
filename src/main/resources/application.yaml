@@ -1,6 +1,7 @@
 server:
   port: 8080
-  # Solo escucha en loopback: lo único que lo alcanza es el nginx del mismo contenedor.
+  # En producción, configurar con la IP privada del contenedor ctnapi para aceptar
+  # tráfico únicamente desde los servicios autorizados y el nginx local.
   address: ${SERVER_ADDRESS:127.0.0.1}
   # Detrás de nginx: toma la IP real del cliente de X-Forwarded-For (el bloqueo por intentos de login de
   # enfermería es por usuario *y por IP*; sin esto todas las IPs serían 127.0.0.1).
@@ -30,6 +31,8 @@ ctnapi:
   # Firma del token de sesión de enfermería. SIN valor por defecto a propósito: si falta, la app no arranca.
   # Mínimo 32 caracteres. Es distinto del JWT_SECRET de SCA.
   jwt-secret: ${CTNAPI_JWT_SECRET}
+  # Clave de servicio independiente para el núcleo escolar. Vacía = endpoints deshabilitados (503).
+  core-api-key: ${CORE_API_KEY:}
 
 anotaciones:
   api-key: ${ANOTACIONES_API_KEY:}  # vacío = API /api/anotaciones deshabilitada (503)

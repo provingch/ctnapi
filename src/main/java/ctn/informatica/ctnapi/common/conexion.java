@@ -26,9 +26,9 @@ public class conexion {
     private Connection con;
 
     public conexion() {
-        this.base = config("CTN_DB_NAME", "ctn.db.name", "ctndb");
+        this.base = config("CTN_DB_NAME", "ctn.db.name", "ctnapi_db");
         /* name of the database */
-        this.host = config("CTN_DB_HOST", "ctn.db.host", "localhost:3306");
+        this.host = config("CTN_DB_HOST", "ctn.db.host", "ctnapi-db:3306");
         this.usuario = config("CTN_DB_USER", "ctn.db.user", "ctnapi_app");
         this.contra = config("CTN_DB_PASSWORD", "ctn.db.password", "");
     }
@@ -63,6 +63,9 @@ public class conexion {
     }
 
     private HikariDataSource pool() throws SQLException {
+        if (contra.isBlank()) {
+            throw new SQLException("CTN_DB_PASSWORD (o ctn.db.password) es obligatorio");
+        }
         String url = "jdbc:mysql://" + host + "/" + base + "?useUnicode=true&characterEncoding=UTF-8";
         String key = url + "|" + usuario + "|" + contra;
         HikariDataSource existente = POOLS.get(key);

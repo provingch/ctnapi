@@ -13,6 +13,7 @@ consulta la instancia de `/api/enfermeria` alojada en SCA; aún no se cambió su
 | `/api/anotaciones` | UCTN (UniformeCTN), app Android de anotaciones | `X-API-Key` = `ANOTACIONES_API_KEY` |
 | `/api/enfermeria` | Sistema de escritorio SHME (actualmente apunta a SCA; destino previsto: ctnapi) | `X-API-Key` = `ENFERMERIA_API_KEY` + `Authorization: Bearer` (salvo `/login`) |
 | `/api/core/v1/**` | Servicios internos, inicialmente SCA | `X-Service-Key` = `CORE_API_KEY` |
+| `/api/biblioteca/v1/**` | Sistema de biblioteca (JavaFX), solo lectura | `X-API-Key` = `BIBLIOTECA_API_KEY` |
 | `/health` | nginx / monitor | pública, responde 200 si la base contesta, 503 si no |
 
 Todo lo demás se rechaza (cadena de seguridad por defecto `denyAll`). La documentación de cada endpoint sigue en el
@@ -97,6 +98,37 @@ El `POST /perfiles` crea solamente el perfil institucional. Usuario/contraseña 
 en SCA, separado. `PUT /alumnos/{id}` registra en `alumno_curso_historial` los cambios de curso, incluyendo `actorId`
 opcional. Las restricciones referenciales no se pueden saltar; borrados que afecten historiales devuelven conflicto.
 
+### API de biblioteca
+
+Permite identificar a alumnos y profesores al registrar préstamos. Solo admite `GET`, no tiene tablas propias ni
+escribe en la base, y devuelve únicamente datos de identificación: nunca teléfono, correo, familia ni datos médicos.
+Los préstamos viven en la base del sistema de biblioteca, que debe guardar el ID institucional junto con una copia de
+nombre, apellido y CI, sin claves foráneas entre bases: la sincronización del Core borra lo que ya no viene de SCA.
+
+| Ruta | Función | Sin resultados |
+|---|---|---|
+| `GET /api/biblioteca/v1/alumnos?ci=` | Alumno por CI exacta | Lista vacía |
+| `GET /api/biblioteca/v1/alumnos?q=&pagina=&limite=` | Alumnos por nombre o apellido | Lista vacía |
+| `GET /api/biblioteca/v1/alumnos/{id}` | Alumno por ID institucional | 404 |
+| `GET /api/biblioteca/v1/profesores?ci=` | Profesores (`usuario.nivel = 1`) por CI exacta | Lista vacía |
+| `GET /api/biblioteca/v1/profesores?q=&pagina=&limite=` | Profesores por nombre o apellido | Lista vacía |
+| `GET /api/biblioteca/v1/profesores/{id}` | Profesor por ID institucional | 404 |
+
+- Se indica `ci` o `q`, nunca ambos. `ci` admite puntos y guiones y compara el número completo.
+- `q` tiene de 2 a 90 caracteres y hasta 6 palabras; cada palabra debe coincidir en nombre o apellido, en cualquier orden.
+- `pagina` va de 1 a 100000 (por defecto 1) y `limite` de 1 a 50 (por defecto 20).
+- Las listas devuelven `{ "ok": true, "datos": [...], "total": n }`; la consulta por ID devuelve un objeto en `datos`.
+- Alumno: `id`, `ci`, `nombre`, `apellido`, `curso`, `promocion`, `seccion`, `especialidad`, `vigente`.
+  La base no indica si un alumno sigue activo: fuera de 1° a 3° (según la promoción) `curso` es `null` y `vigente` es `false`.
+- Profesor: `id`, `ci`, `nombre`, `apellido`, `especialidad`. `usuario.ci` no es única: una CI puede devolver varios perfiles.
+- Errores: 400 parámetros inválidos, 401 clave inválida, 404 ID inexistente, 405 método distinto de `GET`,
+  503 sin `BIBLIOTECA_API_KEY`. Una ruta que no existe, incluida una barra final, responde 403 sin cuerpo, como en las demás APIs.
+- La CI viaja en la URL y queda en los registros de acceso de nginx: tratarlos como datos personales.
+
+Los datos dependen de la sincronización del Core: hasta validarla, "sin resultados" no significa que la persona no
+exista. El nginx de ejemplo publica toda ruta distinta de `/api/core/`; antes de configurar la clave hay que restringir
+`/api/biblioteca/` a la red del colegio, porque una clave guardada en una app de escritorio se puede extraer.
+
 ## Estructura
 
 ```
@@ -104,6 +136,7 @@ src/main/java/ctn/informatica/ctnapi/
   common/        conexion (pool Hikari), PasswordUtil, LoginAttemptService, /health, seguridad por defecto
   enfermeria/    controller, DAO, seguridad y token propios
   anotaciones/   controller, DAO y seguridad
+  biblioteca/    controller, DAO de solo lectura, seguridad y errores
 database/migrations/   001 núcleo compartido; 007, 008, 009 y 013 anotaciones/enfermería
 deploy/                systemd, nginx, permisos de MySQL, ejemplos de variables
 scripts/backup-db.sh   copia de seguridad diaria

@@ -48,3 +48,6 @@ anotaciones:
 enfermeria:
   api-key: ${ENFERMERIA_API_KEY:}   # vacío = API /api/enfermeria deshabilitada (503)
   token-horas: 12                   # vigencia del token de login de enfermería
+
+biblioteca:
+  api-key: ${BIBLIOTECA_API_KEY:}   # vacío = API /api/biblioteca deshabilitada (503)

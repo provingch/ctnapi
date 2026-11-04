@@ -8,6 +8,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -28,6 +30,9 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/core/v1")
 @Validated
 public class CoreController {
+
+    /** Paraguay: UTC-3 todo el año (igual que la API de biblioteca). */
+    private static final ZoneOffset PARAGUAY = ZoneOffset.ofHours(-3);
 
     public record PerfilRequest(
             @Size(max = 45) String nombre,
@@ -248,6 +253,18 @@ public class CoreController {
             throws SQLException {
         if (!dao.desvincularFamilia(id, perfilId)) throw noExiste("No existe el vínculo familiar");
         return ok(Map.of("alumnoId", id, "perfilId", perfilId));
+    }
+
+    /**
+     * Cursos de un profesor (solo cursos, sin materias), por la promoción del año: {@code anio} opcional, por
+     * defecto el año actual en Paraguay. Un perfil que no es profesor o no tiene asignaciones devuelve lista vacía.
+     */
+    @GetMapping("/perfiles/{id}/cursos")
+    public Map<String, Object> cursosDelProfesor(@PathVariable @Min(1) int id,
+            @RequestParam(required = false) @Min(1900) @Max(2200) Integer anio) throws SQLException {
+        requerir(dao.perfil(id), "No existe el perfil");
+        int anioEfectivo = anio != null ? anio : LocalDate.now(PARAGUAY).getYear();
+        return ok(dao.cursosDeProfesor(id, anioEfectivo));
     }
 
     @GetMapping("/perfiles/{id}/alumnos")

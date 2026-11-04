@@ -222,6 +222,31 @@ public class CoreDao extends conexion {
         }
     }
 
+    /**
+     * Cursos que dicta un profesor, según sus asignaciones, resueltos a la promoción del año {@code anio}.
+     * Misma regla que SCA: el curso-base de nivel N corresponde a la promoción {@code anio + (3 - N)}
+     * (nivel 3 = promoción del año actual, nivel 2 = año + 1, nivel 1 = año + 2). {@code curso_id} es el curso real
+     * de esa promoción y queda en {@code null} si todavía no existe; el curso-base igual se informa.
+     * No cruza con {@code materia}: una asignación con materia rota no esconde el curso.
+     */
+    public List<Map<String, Object>> cursosDeProfesor(int profesorId, int anio) throws SQLException {
+        String sql = "SELECT DISTINCT cb.id AS curso_base_id, cb.especialidad_id, e.nombre AS especialidad, "
+                + "cb.nivel, cb.seccion, ? + (3 - cb.nivel) AS promocion, c.id AS curso_id "
+                + "FROM asignacion a JOIN curso_base cb ON cb.id = a.curso_base_id "
+                + "JOIN especialidad e ON e.id = cb.especialidad_id "
+                + "LEFT JOIN curso c ON c.especialidad_id = cb.especialidad_id AND c.seccion = cb.seccion "
+                + "AND c.promocion = ? + (3 - cb.nivel) "
+                + "WHERE a.usuario_id = ? ORDER BY e.nombre, cb.nivel DESC, cb.seccion";
+        try (Connection con = getCon(); PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, anio);
+            ps.setInt(2, anio);
+            ps.setInt(3, profesorId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rows(rs);
+            }
+        }
+    }
+
     public int asegurarCurso(CoreController.CursoRequest c) throws SQLException {
         return asegurar("INSERT INTO curso (especialidad_id, promocion, seccion) VALUES (?, ?, ?) "
                 + "ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)", c.especialidadId(), c.promocion(), c.seccion());

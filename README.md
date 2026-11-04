@@ -92,7 +92,14 @@ Base URL: `http://<IP_PRIVADA_CTNAPI>:8080/api/core/v1`. Todas las rutas requier
 | `/asignaciones` | `GET` (filtros `profesorId`, `especialidadId`), `POST` |
 | `/asignaciones/{id}` | `PUT`, `DELETE` |
 | `/alumnos/{id}/familia`, `/perfiles/{id}/alumnos` | `GET`; crear/eliminar vínculos familiares |
+| `/perfiles/{id}/cursos` | `GET` (filtro opcional `anio`): cursos del profesor según sus asignaciones, por promoción |
 | `/codigos-conducta` | `GET`, `POST`, `PUT`; activar/desactivar sin borrar el historial |
+
+`GET /perfiles/{id}/cursos` devuelve solo los cursos del profesor (sin materias), uno por curso-base asignado:
+`curso_base_id`, `especialidad_id`, `especialidad`, `nivel`, `seccion`, `promocion` y `curso_id`. La promoción se calcula como
+en SCA: `anio + (3 - nivel)` (nivel 3 = promoción del año actual, nivel 2 = año + 1, nivel 1 = año + 2); `anio` es el año
+actual de Paraguay salvo que se indique `?anio=`. `curso_id` es el curso real de esa promoción y es `null` si todavía no
+existe en la base (el curso-base igual se informa). Un perfil inexistente da 404; sin asignaciones, lista vacía.
 
 El `POST /perfiles` crea solamente el perfil institucional. Usuario/contraseña y demás credenciales se administran
 en SCA, separado. `PUT /alumnos/{id}` registra en `alumno_curso_historial` los cambios de curso, incluyendo `actorId`

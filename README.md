@@ -161,8 +161,8 @@ certbot --nginx -d TU_DOMINIO
 ```
 
 `deploy.sh` sigue el flujo de SCA: actualiza el checkout con `git pull --ff-only`, ejecuta `mvn clean verify`,
-instala el JAR y el unit de systemd, reinicia el servicio y comprueba `/health`. Si el health check falla, restaura
-el JAR previo. Requiere un checkout limpio, JDK 17+, Maven y sudo/root; la cuenta de servicio y
+instala el JAR, el unit de systemd y `scripts/backup-db.sh`, reinicia el servicio y comprueba `/health`. Si el health
+check falla, restaura el JAR previo. Requiere un checkout limpio, JDK 17+, Maven y sudo/root; la cuenta de servicio y
 `/etc/ctnapi/ctnapi.env` deben existir antes del primer deploy. El script no instala paquetes, no modifica el `.env`,
 no toca nginx y **no ejecuta migraciones ni importa datos**.
 
@@ -173,7 +173,14 @@ no toca nginx y **no ejecuta migraciones ni importa datos**.
 servicio queda en estado `failed`) y borra las copias de más de 14 días. Lo dispara un timer de systemd con
 `OnCalendar=*-*-* 20:00:00 America/Asuncion` y `Persistent=true` (si el contenedor estaba apagado a las 20:00, corre al arrancar).
 
+`deploy.sh` instala y actualiza el script en `/opt/ctnapi/scripts/`. Las dos líneas `install` de esa ruta solo hacen
+falta para configurar los backups antes del primer deploy.
+
 ```bash
+install -d -o ctnapi -g ctnapi -m 700 /var/backups/ctnapi  # debe existir antes de arrancar el servicio
+install -d -o root -g root -m 755 /opt/ctnapi/scripts
+install -o root -g root -m 755 scripts/backup-db.sh /opt/ctnapi/scripts/backup-db.sh
+
 cp deploy/backup.env.example /etc/ctnapi/backup.env       # host privado de la base y retención
 cp deploy/backup.cnf.example /etc/ctnapi/backup.cnf       # usuario ctnapi_backup + clave
 chown ctnapi:ctnapi /etc/ctnapi/backup.cnf && chmod 600 /etc/ctnapi/backup.cnf

@@ -6,8 +6,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -33,6 +38,7 @@ public class AnotacionesController {
     static final ZoneOffset PARAGUAY = ZoneOffset.ofHours(-3);
     static final int MAX_FOTO_BYTES = 5 * 1024 * 1024;
     private static final int MAX_OBSERVACION = 500;
+    private static final Pattern CORREO = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final AnotacionesDao dao;
 
@@ -66,6 +72,33 @@ public class AnotacionesController {
     @RequestMapping("/historial")
     public Map<String, Object> historial(@RequestParam int alumno) throws SQLException {
         return ok(dao.historial(alumno));
+    }
+
+    /**
+     * Correos de los padres/tutores del alumno (perfiles nivel 4 vinculados en {@code alumno_usuario}),
+     * para completar el destinatario del reporte. Solo lectura y solo correos: nunca CI, teléfonos ni nombres.
+     * El alumno debe estar en un curso asignado al profesor indicado; si no, 403.
+     */
+    @RequestMapping("/correos_tutores")
+    public Map<String, Object> correosTutores(@RequestParam int profesor, @RequestParam int alumno) throws SQLException {
+        if (!dao.existeProfesor(profesor)) throw error(HttpStatus.NOT_FOUND, "El profesor no existe");
+        if (!dao.existeAlumno(alumno)) throw error(HttpStatus.NOT_FOUND, "El alumno no existe");
+        if (!dao.alumnoAsignadoAProfesor(profesor, alumno, LocalDate.now(PARAGUAY).getYear())) {
+            throw error(HttpStatus.FORBIDDEN, "El alumno no pertenece a tus cursos asignados");
+        }
+        return ok(Map.of("alumno_id", alumno, "correos", correosValidos(dao.correosTutores(alumno))));
+    }
+
+    /** Descarta vacíos e inválidos y quita duplicados sin distinguir mayúsculas, conservando el orden. */
+    static List<String> correosValidos(List<String> correos) {
+        Map<String, String> unicos = new LinkedHashMap<>();
+        for (String correo : correos) {
+            if (correo == null) continue;
+            String limpio = correo.trim();
+            if (limpio.length() > 254 || !CORREO.matcher(limpio).matches()) continue;
+            unicos.putIfAbsent(limpio.toLowerCase(Locale.ROOT), limpio);
+        }
+        return new ArrayList<>(unicos.values());
     }
 
     @RequestMapping("/foto")

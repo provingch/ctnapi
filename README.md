@@ -136,6 +136,29 @@ Los datos dependen de la sincronización del Core: hasta validarla, "sin resulta
 exista. El nginx de ejemplo publica toda ruta distinta de `/api/core/`; antes de configurar la clave hay que restringir
 `/api/biblioteca/` a la red del colegio, porque una clave guardada en una app de escritorio se puede extraer.
 
+### Correos de tutores para UCTN (`/api/anotaciones/correos_tutores`)
+
+Endpoint de solo lectura que usa UCTN para completar el destinatario al enviar el PDF del historial a los padres.
+**No está desplegado:** UCTN hoy consulta `/api/anotaciones` en SCA, que no tiene esta ruta. Para usarlo hay que
+portarlo a SCA o apuntar UCTN a ctnapi, con aprobación del administrador. No requiere cambios de esquema.
+
+`GET|POST /api/anotaciones/correos_tutores?profesor={id}&alumno={id}` con `X-API-Key` = `ANOTACIONES_API_KEY`.
+
+```json
+{ "ok": true, "datos": { "alumno_id": 41, "correos": ["madre@ejemplo.test", "tutor@ejemplo.test"] } }
+```
+
+- Destinatarios: perfiles `usuario.nivel = 4` vinculados al alumno en `alumno_usuario` (mismo criterio que
+  `tutores_colegio` de enfermería). La base no tiene un campo de "autorizado a recibir comunicaciones": el vínculo
+  familiar es la única autorización disponible. Un padre cargado con otro nivel (por ejemplo, docente) no se incluye.
+- Devuelve solo correos: sin CI, nombres, teléfonos ni parentesco. Descarta vacíos e inválidos y quita duplicados
+  sin distinguir mayúsculas. Sin tutores con correo: `correos` vacío.
+- Autorización: el alumno debe estar en un curso asignado al profesor (misma regla de promoción que `/alumnos`);
+  si no, 403 `El alumno no pertenece a tus cursos asignados`. Profesor o alumno inexistente: 404. Parámetro faltante
+  o no numérico: 422. Sin clave: 401.
+- Límite: como el resto de esta API, el profesor se identifica por su ID tras el login por CI; no hay token por
+  profesor, así que la comprobación de asignación no impide que alguien con la clave de la app pida otro ID.
+
 ## Estructura
 
 ```

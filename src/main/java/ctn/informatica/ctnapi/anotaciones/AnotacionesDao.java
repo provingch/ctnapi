@@ -174,6 +174,42 @@ public class AnotacionesDao extends conexion {
         return existe("SELECT 1 FROM materia WHERE id = ?", id);
     }
 
+    /** ¿El alumno está en un curso que el profesor tiene asignado? Misma regla de promoción que {@link #alumnos}. */
+    public boolean alumnoAsignadoAProfesor(int profesorId, int alumnoId, int anioActual) throws SQLException {
+        String sql = "SELECT 1 FROM asignacion a "
+                + "JOIN curso_base cb ON cb.id = a.curso_base_id "
+                + "JOIN curso c ON c.especialidad_id = cb.especialidad_id AND c.seccion = cb.seccion "
+                + "AND c.promocion = ? + (3 - cb.nivel) "
+                + "JOIN alumno al ON al.curso_id = c.id "
+                + "WHERE a.usuario_id = ? AND al.id = ? LIMIT 1";
+        try (Connection con = getCon(); PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, anioActual);
+            ps.setInt(2, profesorId);
+            ps.setInt(3, alumnoId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /**
+     * Correos de los padres/tutores vinculados al alumno: perfiles {@code nivel = 4} en {@code alumno_usuario}
+     * (el mismo criterio que {@code tutores_colegio} de enfermería). Solo la columna {@code correo}.
+     */
+    public List<String> correosTutores(int alumnoId) throws SQLException {
+        String sql = "SELECT u.correo FROM alumno_usuario au JOIN usuario u ON u.id = au.usuario_id "
+                + "WHERE au.alumno_id = ? AND u.nivel = 4 AND u.correo IS NOT NULL "
+                + "ORDER BY au.parentesco, u.id";
+        try (Connection con = getCon(); PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, alumnoId);
+            List<String> out = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(rs.getString("correo"));
+            }
+            return out;
+        }
+    }
+
     /**
      * ¿Ya hay una anotación del mismo alumno y tipo en el día {@code [desde, hasta)}, cargada por
      * cualquier profesor? Con {@code compararObservacion} solo choca si la observación es idéntica

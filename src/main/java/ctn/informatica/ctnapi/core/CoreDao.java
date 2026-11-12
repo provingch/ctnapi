@@ -127,8 +127,6 @@ public class CoreDao extends conexion {
         String sql = "INSERT INTO alumno (ci, nombre, apellido, curso_id, email, telefono) VALUES (?, ?, ?, ?, ?, ?)";
         try (Connection con = getCon(); PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             setAlumno(ps, a, 1);
-            ps.setString(6, a.telefono());
-            ps.setString(5, a.email());
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (!keys.next()) throw new SQLException("No se pudo obtener el ID del alumno creado");
@@ -156,8 +154,6 @@ public class CoreDao extends conexion {
                 try (PreparedStatement ps = con.prepareStatement(
                         "UPDATE alumno SET ci = ?, nombre = ?, apellido = ?, curso_id = ?, email = ?, telefono = ? WHERE id = ?")) {
                     setAlumno(ps, a, 1);
-                    ps.setString(6, a.telefono());
-                    ps.setString(5, a.email());
                     ps.setInt(7, id);
                     ps.executeUpdate();
                 }

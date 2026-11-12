@@ -22,7 +22,7 @@ README de `ctn-sca-info` (sección "APIs para apps externas").
 ## Propiedad de datos y bases separadas
 
 - `ctnapi_db` es la base propia de ctnapi. El esquema compartido inicial está en
-  `database/migrations/001_nucleo_escolar.sql`; las migraciones 007, 008, 009 y 013 agregan anotaciones y enfermería.
+  `database/migrations/001_nucleo_escolar.sql`; las migraciones 007, 008, 009 y 013 agregan anotaciones y enfermería; 014 agrega `email` y `telefono` a `alumno`.
 - `usuario` en ctnapi contiene el perfil institucional (nombre, CI, contacto, nivel y especialidad), no credenciales.
   Contraseñas, identificadores/correos vinculados a Google OAuth, tokens, segundo factor, sesiones y permisos internos
   de SCA pertenecen exclusivamente a la base de SCA. El campo `correo` de ctnapi es el contacto institucional, no la
@@ -167,7 +167,7 @@ src/main/java/ctn/informatica/ctnapi/
   enfermeria/    controller, DAO, seguridad y token propios
   anotaciones/   controller, DAO y seguridad
   biblioteca/    controller, DAO de solo lectura, seguridad y errores
-database/migrations/   001 núcleo compartido; 007, 008, 009 y 013 anotaciones/enfermería
+database/migrations/   001 núcleo compartido; 007, 008, 009 y 013 anotaciones/enfermería; 014 contacto del alumno
 deploy/                systemd, nginx, permisos de MySQL, ejemplos de variables
 scripts/backup-db.sh   copia de seguridad diaria
 ```
@@ -208,6 +208,8 @@ mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/007_anotaciones.
 mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/008_tipos_anotacion_coordinacion.sql
 mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/009_enfermeria.sql
 mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/013_enfermeria_personal.sql
+# 014 es idempotente y también hay que correrla en producción antes de desplegar el JAR que lee alumno.email/telefono.
+mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/014_alumno_email_telefono.sql
 
 # 3) Crear la configuración de runtime una sola vez: completar IPs, claves y credenciales reales.
 cp deploy/ctnapi.env.example /etc/ctnapi/ctnapi.env

@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -130,6 +131,51 @@ class AnotacionesApiTest {
         when(dao.tipoActivo(3)).thenReturn(tipo);
         when(dao.existeAlumno(1)).thenReturn(true);
         when(dao.existeProfesor(2)).thenReturn(true);
+        when(dao.alumnoAsignadoAProfesor(eq(2), eq(1), anyInt())).thenReturn(true);
+    }
+
+    @Test
+    void guardarParaAlumnoDeOtroCursoDa403YNoInserta() throws Exception {
+        existenTodos(new AnotacionesDao.Tipo(false, false, false));
+        when(dao.alumnoAsignadoAProfesor(eq(2), eq(1), anyInt())).thenReturn(false);
+        mockMvc.perform(guardar())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("El alumno no pertenece a tus cursos asignados"));
+        verify(dao, never()).insertar(anyInt(), anyInt(), anyInt(), any(), any(), any(), any());
+    }
+
+    @Test
+    void historialConProfesorExigeAsignacionYSinProfesorConservaContrato() throws Exception {
+        when(dao.existeProfesor(2)).thenReturn(true);
+        when(dao.existeAlumno(1)).thenReturn(true);
+        when(dao.historial(1)).thenReturn(List.of());
+        mockMvc.perform(get("/api/anotaciones/historial").header("X-API-Key", KEY).param("alumno", "1"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/anotaciones/historial").header("X-API-Key", KEY)
+                        .param("alumno", "1").param("profesor", "2"))
+                .andExpect(status().isForbidden());
+        when(dao.alumnoAsignadoAProfesor(eq(2), eq(1), anyInt())).thenReturn(true);
+        mockMvc.perform(get("/api/anotaciones/historial").header("X-API-Key", KEY)
+                        .param("alumno", "1").param("profesor", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ok").value(true));
+    }
+
+    @Test
+    void fotoConProfesorExigeAsignacionDelAlumnoDeLaFoto() throws Exception {
+        when(dao.existeProfesor(2)).thenReturn(true);
+        when(dao.existeAlumno(1)).thenReturn(true);
+        when(dao.alumnoDeFoto(5, null)).thenReturn(1);
+        when(dao.foto(5, null)).thenReturn(new AnotacionesDao.Foto("image/jpeg", JPEG));
+        mockMvc.perform(get("/api/anotaciones/foto").header("X-API-Key", KEY).param("id", "5").param("profesor", "2"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/anotaciones/foto").header("X-API-Key", KEY).param("id", "6").param("profesor", "2"))
+                .andExpect(status().isNotFound());
+        when(dao.alumnoAsignadoAProfesor(eq(2), eq(1), anyInt())).thenReturn(true);
+        mockMvc.perform(get("/api/anotaciones/foto").header("X-API-Key", KEY).param("id", "5").param("profesor", "2"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/anotaciones/foto").header("X-API-Key", KEY).param("id", "5"))
+                .andExpect(status().isOk());
     }
 
     private MockMultipartHttpServletRequestBuilder guardar() {

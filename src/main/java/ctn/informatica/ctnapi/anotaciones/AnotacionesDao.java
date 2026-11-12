@@ -150,6 +150,19 @@ public class AnotacionesDao extends conexion {
         }
     }
 
+    /** Alumno de la anotación a la que pertenece la foto (por {@code id} de la foto o por {@code anotacion_id}). */
+    public Integer alumnoDeFoto(Integer fotoId, Integer anotacionId) throws SQLException {
+        String sql = fotoId != null
+                ? "SELECT a.alumno_id FROM anotacion_foto f JOIN anotacion a ON a.id = f.anotacion_id WHERE f.id = ?"
+                : "SELECT alumno_id FROM anotacion WHERE id = ?";
+        try (Connection con = getCon(); PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, fotoId != null ? fotoId : anotacionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : null;
+            }
+        }
+    }
+
     public Tipo tipoActivo(int tipoId) throws SQLException {
         String sql = "SELECT requiere_foto, requiere_observacion, repetible FROM tipo_anotacion WHERE id = ? AND activo = 1";
         try (Connection con = getCon(); PreparedStatement ps = con.prepareStatement(sql)) {

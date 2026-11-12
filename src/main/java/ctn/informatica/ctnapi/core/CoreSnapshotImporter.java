@@ -94,15 +94,18 @@ public class CoreSnapshotImporter extends conexion {
                             ps.setInt(8, row.nivel());
                             nullableInteger(ps, 9, row.especialidadId());
                         });
-                upsert(con, "INSERT INTO alumno (id, ci, nombre, apellido, curso_id) VALUES (?, ?, ?, ?, ?) "
+                upsert(con, "INSERT INTO alumno (id, ci, nombre, apellido, curso_id, email, telefono) VALUES (?, ?, ?, ?, ?, ?, ?) "
                                 + "ON DUPLICATE KEY UPDATE ci = VALUES(ci), nombre = VALUES(nombre), "
-                                + "apellido = VALUES(apellido), curso_id = VALUES(curso_id)",
+                                + "apellido = VALUES(apellido), curso_id = VALUES(curso_id), "
+                                + "email = VALUES(email), telefono = VALUES(telefono)",
                         snapshot.alumnos(), (ps, row) -> {
                             ps.setInt(1, row.id());
                             ps.setString(2, row.ci());
                             ps.setString(3, row.nombre());
                             ps.setString(4, row.apellido());
                             ps.setInt(5, row.cursoId());
+                            ps.setString(6, row.email());
+                            ps.setString(7, row.telefono());
                         });
                 upsert(con, "INSERT INTO materia_especialidad (materia_id, especialidad_id) VALUES (?, ?) "
                                 + "ON DUPLICATE KEY UPDATE especialidad_id = VALUES(especialidad_id)",

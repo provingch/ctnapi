@@ -99,7 +99,7 @@ public class CoreDao extends conexion {
     }
 
     public List<Map<String, Object>> alumnos(Integer cursoId, Integer especialidadId) throws SQLException {
-        String sql = "SELECT a.id, a.ci, a.nombre, a.apellido, a.curso_id FROM alumno a "
+        String sql = "SELECT a.id, a.ci, a.nombre, a.apellido, a.curso_id, a.email, a.telefono FROM alumno a "
                 + "JOIN curso c ON c.id = a.curso_id WHERE (? IS NULL OR a.curso_id = ?) "
                 + "AND (? IS NULL OR c.especialidad_id = ?) ORDER BY a.apellido, a.nombre, a.id";
         try (Connection con = getCon(); PreparedStatement ps = con.prepareStatement(sql)) {
@@ -115,7 +115,7 @@ public class CoreDao extends conexion {
 
     public Map<String, Object> alumno(int id) throws SQLException {
         try (Connection con = getCon(); PreparedStatement ps = con.prepareStatement(
-                "SELECT id, ci, nombre, apellido, curso_id FROM alumno WHERE id = ?")) {
+                "SELECT id, ci, nombre, apellido, curso_id, email, telefono FROM alumno WHERE id = ?")) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? row(rs) : null;
@@ -124,9 +124,11 @@ public class CoreDao extends conexion {
     }
 
     public int crearAlumno(CoreController.AlumnoRequest a) throws SQLException {
-        String sql = "INSERT INTO alumno (ci, nombre, apellido, curso_id) VALUES (?, ?, ?, ?)";
+        String sql = "INSERT INTO alumno (ci, nombre, apellido, curso_id, email, telefono) VALUES (?, ?, ?, ?, ?, ?)";
         try (Connection con = getCon(); PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             setAlumno(ps, a, 1);
+            ps.setString(6, a.telefono());
+            ps.setString(5, a.email());
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (!keys.next()) throw new SQLException("No se pudo obtener el ID del alumno creado");
@@ -152,9 +154,11 @@ public class CoreDao extends conexion {
                     }
                 }
                 try (PreparedStatement ps = con.prepareStatement(
-                        "UPDATE alumno SET ci = ?, nombre = ?, apellido = ?, curso_id = ? WHERE id = ?")) {
+                        "UPDATE alumno SET ci = ?, nombre = ?, apellido = ?, curso_id = ?, email = ?, telefono = ? WHERE id = ?")) {
                     setAlumno(ps, a, 1);
-                    ps.setInt(5, id);
+                    ps.setString(6, a.telefono());
+                    ps.setString(5, a.email());
+                    ps.setInt(7, id);
                     ps.executeUpdate();
                 }
                 if (cursoAnterior != a.cursoId()) {
@@ -191,6 +195,8 @@ public class CoreDao extends conexion {
         ps.setString(start + 1, a.nombre());
         ps.setString(start + 2, a.apellido());
         ps.setInt(start + 3, a.cursoId());
+        ps.setString(start + 4, a.email());
+        ps.setString(start + 5, a.telefono());
     }
 
     public List<Map<String, Object>> cursos(Integer especialidadId, Integer promocion) throws SQLException {

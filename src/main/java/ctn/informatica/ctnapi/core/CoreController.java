@@ -51,8 +51,8 @@ public class CoreController {
             @NotBlank @Size(max = 45) String apellido,
             @Min(1) int cursoId,
             @Min(1) Integer actorId,
-            @Size(max = 255) String email,
-            @Size(max = 45) String telefono) {
+            @Size(max = 150) String email,
+            @Size(max = 30) String telefono) {
     }
 
     public record CursoRequest(

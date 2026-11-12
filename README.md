@@ -139,8 +139,8 @@ exista. El nginx de ejemplo publica toda ruta distinta de `/api/core/`; antes de
 ### Correos de tutores para UCTN (`/api/anotaciones/correos_tutores`)
 
 Endpoint de solo lectura que usa UCTN para completar el destinatario al enviar el PDF del historial a los padres.
-**No está desplegado:** UCTN hoy consulta `/api/anotaciones` en SCA, que no tiene esta ruta. Para usarlo hay que
-portarlo a SCA o apuntar UCTN a ctnapi, con aprobación del administrador. No requiere cambios de esquema.
+UCTN de producción todavía consulta `/api/anotaciones` en SCA, que no tiene esta ruta; la usa la compilación de
+pruebas `ctnapi` de la app (ver "Migración de UCTN a ctnapi"). No requiere cambios de esquema.
 
 `GET|POST /api/anotaciones/correos_tutores?profesor={id}&alumno={id}` con `X-API-Key` = `ANOTACIONES_API_KEY`.
 
@@ -158,6 +158,19 @@ portarlo a SCA o apuntar UCTN a ctnapi, con aprobación del administrador. No re
   o no numérico: 422. Sin clave: 401.
 - Límite: como el resto de esta API, el profesor se identifica por su ID tras el login por CI; no hay token por
   profesor, así que la comprobación de asignación no impide que alguien con la clave de la app pida otro ID.
+
+### Migración de UCTN a ctnapi
+
+ctnapi ya tiene todas las rutas que usa UCTN (`login`, `menus`, `alumnos`, `tipos_anotacion`, `historial`, `foto`,
+`guardar_anotacion`, `correos_tutores`), con el mismo JSON que SCA. Controles de asignación profesor–alumno:
+
+- `guardar_anotacion`: siempre; un alumno fuera de los cursos asignados al profesor da 403 y no se inserta nada.
+- `historial` y `foto`: cuando llega `profesor` (UCTN lo envía al usar ctnapi). Sin `profesor` se conserva el
+  contrato anterior de SCA.
+
+Antes de apuntar la app de producción a ctnapi hace falta: desplegar esta versión con `ANOTACIONES_API_KEY`,
+completar la sincronización del Core desde SCA y trasladar las anotaciones y fotos existentes con
+[`database/migracion-anotaciones-desde-sca.md`](database/migracion-anotaciones-desde-sca.md).
 
 ## Estructura
 

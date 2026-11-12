@@ -69,8 +69,14 @@ public class AnotacionesController {
         return ok(dao.tiposActivos());
     }
 
+    /**
+     * Con {@code profesor} (lo envía UCTN al usar ctnapi) el alumno debe estar en un curso asignado a ese profesor;
+     * sin él se conserva el contrato anterior de SCA.
+     */
     @RequestMapping("/historial")
-    public Map<String, Object> historial(@RequestParam int alumno) throws SQLException {
+    public Map<String, Object> historial(@RequestParam int alumno,
+            @RequestParam(required = false) Integer profesor) throws SQLException {
+        if (profesor != null) exigirAsignacion(profesor, alumno);
         return ok(dao.historial(alumno));
     }
 
@@ -81,12 +87,17 @@ public class AnotacionesController {
      */
     @RequestMapping("/correos_tutores")
     public Map<String, Object> correosTutores(@RequestParam int profesor, @RequestParam int alumno) throws SQLException {
+        exigirAsignacion(profesor, alumno);
+        return ok(Map.of("alumno_id", alumno, "correos", correosValidos(dao.correosTutores(alumno))));
+    }
+
+    /** 404 si el profesor o el alumno no existen; 403 si el alumno no está en un curso asignado al profesor. */
+    private void exigirAsignacion(int profesor, int alumno) throws SQLException {
         if (!dao.existeProfesor(profesor)) throw error(HttpStatus.NOT_FOUND, "El profesor no existe");
         if (!dao.existeAlumno(alumno)) throw error(HttpStatus.NOT_FOUND, "El alumno no existe");
         if (!dao.alumnoAsignadoAProfesor(profesor, alumno, LocalDate.now(PARAGUAY).getYear())) {
             throw error(HttpStatus.FORBIDDEN, "El alumno no pertenece a tus cursos asignados");
         }
-        return ok(Map.of("alumno_id", alumno, "correos", correosValidos(dao.correosTutores(alumno))));
     }
 
     /** Descarta vacíos e inválidos y quita duplicados sin distinguir mayúsculas, conservando el orden. */
@@ -103,9 +114,15 @@ public class AnotacionesController {
 
     @RequestMapping("/foto")
     public ResponseEntity<byte[]> foto(@RequestParam(required = false) Integer id,
-            @RequestParam(name = "anotacion_id", required = false) Integer anotacionId) throws SQLException {
+            @RequestParam(name = "anotacion_id", required = false) Integer anotacionId,
+            @RequestParam(required = false) Integer profesor) throws SQLException {
         if (id == null && anotacionId == null) {
             throw error(HttpStatus.UNPROCESSABLE_CONTENT, "Indicá 'id' (de la foto) o 'anotacion_id'");
+        }
+        if (profesor != null) {
+            Integer alumno = dao.alumnoDeFoto(id, anotacionId);
+            if (alumno == null) throw error(HttpStatus.NOT_FOUND, "No se encontró la foto");
+            exigirAsignacion(profesor, alumno);
         }
         AnotacionesDao.Foto foto = dao.foto(id, anotacionId);
         if (foto == null) throw error(HttpStatus.NOT_FOUND, "No se encontró la foto");
@@ -129,8 +146,7 @@ public class AnotacionesController {
         if (t.requiereObservacion() && obs == null) {
             throw error(HttpStatus.UNPROCESSABLE_CONTENT, "Este tipo de anotación requiere que escribas la observación");
         }
-        if (!dao.existeAlumno(alumno)) throw error(HttpStatus.NOT_FOUND, "El alumno no existe");
-        if (!dao.existeProfesor(profesor)) throw error(HttpStatus.NOT_FOUND, "El profesor no existe");
+        exigirAsignacion(profesor, alumno);
         if (materia != null && !dao.existeMateria(materia)) throw error(HttpStatus.NOT_FOUND, "La materia no existe");
 
         LocalDateTime ahora = LocalDateTime.now(PARAGUAY).truncatedTo(ChronoUnit.SECONDS);

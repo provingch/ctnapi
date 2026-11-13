@@ -11,13 +11,17 @@ import json
 import ssl
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import planilla
+
 AQUI = Path(__file__).resolve().parent
 PREFIJO = "/api/core/v1/"
 MAX_CUERPO = 1_000_000  # igual que el límite del Core en ctnapi
+MAX_PLANILLA = 20_000_000
 
 
 def cargar_config(ruta: Path) -> dict:
@@ -104,6 +108,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _leer_planilla(self):
+        """Recibe la planilla (cuerpo crudo) y devuelve los bloques leídos. No escribe nada en ctnapi."""
+        if not self._origen_valido():
+            return self._json(403, {"ok": False, "error": "Pedido rechazado"})
+        largo = int(self.headers.get("Content-Length") or 0)
+        if not 0 < largo <= MAX_PLANILLA:
+            return self._json(413, {"ok": False, "error": "Archivo vacío o mayor a 20 MB"})
+        nombre = Path(urllib.parse.unquote(self.headers.get("X-Nombre-Archivo", "planilla.xls"))).name
+        try:
+            bloques = planilla.leer(self.rfile.read(largo), nombre)
+        except planilla.ErrorPlanilla as e:
+            return self._json(422, {"ok": False, "error": str(e)})
+        return self._json(200, {"ok": True, "datos": {"archivo": nombre, "bloques": bloques}})
+
     def _ruta(self):
         ruta = self.path.split("?", 1)[0]
         if self.command == "GET" and ruta in ("/", "/index.html"):
@@ -114,6 +132,8 @@ class Handler(BaseHTTPRequestHandler):
             if not self._origen_valido():
                 return self._json(403, {"ok": False, "error": "Pedido rechazado"})
             return self._json(200, {"ok": True, "datos": {"nombre": self.cfg["nombre"], "url": self.cfg["url"]}})
+        if self.command == "POST" and ruta == "/_importar/leer":
+            return self._leer_planilla()
         if ruta.startswith(PREFIJO) and ".." not in ruta:
             return self._proxy()
         return self._json(404, {"ok": False, "error": "No encontrado"})

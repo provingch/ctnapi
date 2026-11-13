@@ -236,12 +236,180 @@ const vistas = {
     describir: (a) => `${a.profesor_apellido} · ${a.materia_nombre} · ${a.nivel}° ${a.seccion}`,
   },
 
-  importar: {
-    titulo: 'Importar',
-    render: (cont) => cont.append(h('p', { class: 'mute' },
-      'Importación de planillas: pendiente hasta definir el formato estándar.')),
-  },
+  importar: { titulo: 'Importar', render: (cont) => renderImportar(cont) },
 };
+
+// ---------- importación de planillas de Secretaría ("LISTAS <n> CURSO <año> SG.xls") ----------
+const sinTildes = (s) => (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+const soloDigitos = (s) => String(s ?? '').replace(/\D/g, '');
+
+/** Compara la planilla con ctnapi. No escribe nada: devuelve el plan de cambios. */
+function planificar(bloques, alumnos) {
+  const porCi = new Map(), porNombre = new Map();
+  for (const a of alumnos) {
+    const ci = soloDigitos(a.ci);
+    if (ci) porCi.set(ci, a);
+    const k = sinTildes(`${a.apellido}, ${a.nombre}`);
+    porNombre.set(k, [...(porNombre.get(k) ?? []), a]);
+  }
+  const ciEnPlanilla = new Map();
+  for (const b of bloques) for (const f of b.alumnos) if (f.ci) ciEnPlanilla.set(f.ci, (ciEnPlanilla.get(f.ci) ?? 0) + 1);
+
+  const filas = [], avisos = [], cursosDestino = new Set();
+  for (const b of bloques) {
+    const esp = cat.especialidades.find((e) => sinTildes(e.nombre) === sinTildes(b.especialidad));
+    const destino = `${b.hoja} · ${b.nivel}° ${b.seccion ?? '?'} · ${b.especialidad}`;
+    for (const a of b.avisos) avisos.push(`${destino}: ${a}`);
+    let curso = null, errorBloque = null;
+    if (!esp) errorBloque = `Especialidad «${b.especialidad}» no existe en ctnapi`;
+    else if (!b.seccion) errorBloque = 'Bloque sin sección';
+    else if (!b.anio) errorBloque = 'No se pudo determinar el año';
+    else {
+      // Mismo cálculo que SCA: nivel = año - promoción + 3  →  promoción = año - nivel + 3.
+      const promocion = b.anio - b.nivel + 3;
+      const existente = cat.cursos.find((c) => c.especialidad_id === esp.id && c.promocion === promocion && c.seccion === b.seccion);
+      curso = existente ?? { id: null, especialidad_id: esp.id, especialidad: esp.nombre, promocion, seccion: b.seccion };
+      if (existente) cursosDestino.add(existente.id);
+    }
+    for (const f of b.alumnos) {
+      const fila = { ...f, destino, curso, accion: 'error', detalle: '' };
+      filas.push(fila);
+      if (errorBloque) { fila.detalle = errorBloque; continue; }
+      if (!f.ci) { fila.detalle = 'Sin CI en la planilla'; continue; }
+      if (ciEnPlanilla.get(f.ci) > 1) { fila.detalle = `CI ${f.ci} repetida en la planilla: corregir y volver a importar`; continue; }
+      const actual = porCi.get(f.ci);
+      if (!actual) {
+        const homonimos = porNombre.get(sinTildes(`${f.apellido}, ${f.nombre}`)) ?? [];
+        if (homonimos.length) {
+          fila.accion = 'revisar';
+          fila.detalle = `No hay alumno con CI ${f.ci}, pero existe con el mismo nombre: `
+            + homonimos.map((h2) => `#${h2.id} (CI ${h2.ci ?? 'sin cargar'})`).join(', ') + '. No se crea para no duplicarlo.';
+          continue;
+        }
+        fila.accion = 'crear';
+        fila.detalle = curso.id ? '' : 'curso nuevo';
+        continue;
+      }
+      fila.actual = actual;
+      const nombreDistinto = sinTildes(`${actual.apellido}, ${actual.nombre}`) !== sinTildes(`${f.apellido}, ${f.nombre}`);
+      const notaNombre = nombreDistinto ? `En ctnapi figura como «${actual.apellido}, ${actual.nombre}» (se conserva)` : '';
+      if (curso.id && actual.curso_id === curso.id) {
+        fila.accion = 'igual';
+        fila.detalle = notaNombre;
+      } else {
+        const ant = cat.cursos.find((c) => c.id === actual.curso_id);
+        fila.accion = 'mover';
+        fila.detalle = [`desde ${ant ? etiquetaCurso(ant) : `#${actual.curso_id}`}`, notaNombre].filter(Boolean).join(' · ');
+      }
+    }
+  }
+  const enPlanilla = new Set(filas.map((f) => f.ci).filter(Boolean));
+  const ausentes = alumnos.filter((a) => cursosDestino.has(a.curso_id) && !enPlanilla.has(soloDigitos(a.ci)));
+  return { filas, avisos, ausentes };
+}
+
+const ACCIONES = {
+  crear: 'Alta', mover: 'Cambia de curso', igual: 'Sin cambios', revisar: 'Revisar', error: 'Error',
+};
+
+function renderImportar(cont) {
+  const zona = h('div');
+  const input = h('input', { type: 'file', accept: '.xls,.xlsx,.ods' });
+  cont.append(
+    h('p', { class: 'mute' }, 'Planillas de Secretaría General («LISTAS 1er CURSO 2026 SG.xls»). '
+      + 'Se identifica a cada alumno por la CI: los que no existen se dan de alta y los que cambiaron de curso se mueven. '
+      + 'No se borra a nadie ni se pisan nombres, correos ni teléfonos ya cargados. Primero se muestra la vista previa.'),
+    h('div', { class: 'barra' }, input), zona);
+
+  input.addEventListener('change', async () => {
+    const archivo = input.files[0];
+    if (!archivo) return;
+    zona.replaceChildren(h('p', { class: 'mute' }, 'Leyendo planilla…'));
+    msg('');
+    try {
+      const r = await fetch('/_importar/leer', {
+        method: 'POST', body: archivo,
+        headers: { 'X-Carga-Local': '1', 'X-Nombre-Archivo': encodeURIComponent(archivo.name) },
+      });
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.error || `Error ${r.status}`);
+      [cat.cursos, cat.especialidades] = await Promise.all([api('GET', '/cursos'), api('GET', '/especialidades')]);
+      const alumnos = await api('GET', '/alumnos');
+      mostrarPlan(zona, d.datos, planificar(d.datos.bloques, alumnos));
+    } catch (e) {
+      zona.replaceChildren(h('p', { class: 'err' }, errorTexto(e)));
+    }
+  });
+}
+
+function mostrarPlan(zona, leido, plan) {
+  const cuenta = (acc) => plan.filas.filter((f) => f.accion === acc).length;
+  const aplicables = plan.filas.filter((f) => f.accion === 'crear' || f.accion === 'mover');
+  const filtro = h('select', { 'aria-label': 'Mostrar' },
+    h('option', { value: 'cambios' }, 'Mostrar: cambios, errores y revisiones'),
+    h('option', { value: 'todo' }, 'Mostrar: todo'));
+  const tablaZona = h('div');
+  const pintar = () => {
+    const filas = filtro.value === 'todo' ? plan.filas : plan.filas.filter((f) => f.accion !== 'igual' || f.detalle);
+    tablaZona.replaceChildren(tabla([
+      ['Acción', (f) => h('span', { class: f.accion === 'error' ? 'err' : f.accion === 'revisar' ? 'aviso' : '' }, ACCIONES[f.accion])],
+      ['CI', (f) => f.ci], ['Apellidos', (f) => f.apellido], ['Nombres', (f) => f.nombre],
+      ['Curso destino', (f) => f.curso ? etiquetaCurso(f.curso) : f.destino], ['Detalle', (f) => f.detalle],
+    ], filas));
+  };
+  filtro.addEventListener('change', pintar);
+
+  const boton = h('button', { class: 'b', type: 'button', disabled: !aplicables.length }, `Aplicar ${aplicables.length} cambio(s)`);
+  boton.addEventListener('click', async () => {
+    if (!confirm(`Se van a dar de alta ${cuenta('crear')} alumno(s) y mover ${cuenta('mover')}. ¿Continuar?`)) return;
+    boton.disabled = true;
+    await aplicar(aplicables, (txt) => { boton.textContent = txt; });
+  });
+
+  zona.replaceChildren(
+    h('p', {}, h('strong', {}, leido.archivo), ` · ${leido.bloques.length} sección(es) · ${plan.filas.length} fila(s): `,
+      `${cuenta('crear')} alta(s), ${cuenta('mover')} cambio(s) de curso, ${cuenta('igual')} sin cambios, `,
+      h('span', { class: 'aviso' }, `${cuenta('revisar')} a revisar`), ', ', h('span', { class: 'err' }, `${cuenta('error')} con error`), '.'),
+    plan.avisos.length ? h('ul', { class: 'aviso' }, plan.avisos.map((a) => h('li', {}, a))) : '',
+    plan.ausentes.length ? h('details', {}, h('summary', { class: 'aviso' },
+      `${plan.ausentes.length} alumno(s) están en estos cursos en ctnapi pero no figuran en la planilla (no se tocan)`),
+    tabla([['ID', (a) => a.id], ['CI', (a) => a.ci], ['Apellido', (a) => a.apellido], ['Nombre', (a) => a.nombre],
+      ['Curso', (a) => { const c = cat.cursos.find((x) => x.id === a.curso_id); return c ? etiquetaCurso(c) : `#${a.curso_id}`; }]], plan.ausentes)) : '',
+    h('div', { class: 'barra' }, boton, filtro), tablaZona);
+  pintar();
+}
+
+async function aplicar(filas, progreso) {
+  const cursoIds = new Map(); // "esp-prom-sec" → id
+  let hechos = 0;
+  const fallos = [];
+  for (const f of filas) {
+    progreso(`Aplicando… ${hechos + fallos.length + 1}/${filas.length}`);
+    try {
+      const c = f.curso;
+      const clave = `${c.especialidad_id}-${c.promocion}-${c.seccion}`;
+      if (!cursoIds.has(clave)) {
+        // Idempotente: si el curso ya existe devuelve su ID.
+        cursoIds.set(clave, c.id ?? (await api('POST', '/cursos', { especialidadId: c.especialidad_id, promocion: c.promocion, seccion: c.seccion })).id);
+      }
+      const cursoId = cursoIds.get(clave);
+      if (f.accion === 'crear') {
+        await api('POST', '/alumnos', { ci: f.ci, nombre: f.nombre, apellido: f.apellido, cursoId, email: null, telefono: null });
+      } else {
+        const a = f.actual;
+        await api('PUT', `/alumnos/${a.id}`, { ci: a.ci, nombre: a.nombre, apellido: a.apellido, cursoId, email: a.email, telefono: a.telefono });
+      }
+      hechos++;
+    } catch (e) {
+      fallos.push(`${f.apellido}, ${f.nombre} (CI ${f.ci}): ${errorTexto(e)}`);
+      if (e.status === 503 || e.status === 401) break; // escritura deshabilitada o clave mala: no tiene sentido seguir
+    }
+  }
+  progreso(`Listo: ${hechos} aplicado(s)`);
+  cat.cursos = await api('GET', '/cursos').catch(() => cat.cursos);
+  if (fallos.length) msg(`${hechos} aplicado(s), ${fallos.length} con error: ${fallos.slice(0, 3).join(' | ')}${fallos.length > 3 ? ' …' : ''}`, 'err');
+  else msg(`Importación terminada: ${hechos} cambio(s) aplicados.`);
+}
 
 const profesores = () => cat.perfiles.filter((p) => p.nivel === 1 || p.nivel === 5)
   .sort((a, b) => nombrePerfil(a).localeCompare(nombrePerfil(b)));

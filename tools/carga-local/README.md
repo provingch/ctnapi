@@ -31,6 +31,23 @@ consultar, y para cargar solo contra un entorno de prueba.
 Corte (fin de etapa escolar): última sync y después, en `/etc/ctnapi/ctnapi.env`,
 `CORE_SYNC_ENABLED=false` y `CORE_WRITE_ENABLED=true`, y reiniciar `ctnapi`.
 
-## Pendiente
+## Importar planillas de Secretaría
 
-- Importación de planillas: falta definir el formato estándar.
+Pestaña **Importar**: acepta las «LISTAS <n> CURSO <año> SG.xls» (también .xlsx/.ods). Necesita
+**LibreOffice** instalado (`soffice`), que convierte la planilla. La lectura está en `planilla.py`
+(`python3 planilla.py archivo.xls` muestra los bloques leídos).
+
+Formato: una hoja por especialidad y un bloque por sección («Especialidad: … Curso: 1er Curso»,
+«Sección: A», tabla Nº / «APELLIDOS, NOMBRES» / C.I.). El año sale del pie «Año 2026» o, si falta, del
+nombre del archivo. Promoción = año − curso + 3, igual que en SCA.
+
+Reglas:
+- Se identifica a cada alumno por la CI. Si no existe, se da de alta. Si está en otro curso, se lo mueve
+  (queda en `alumno_curso_historial`).
+- **Nunca se borra a nadie** ni se pisan nombres, correos o teléfonos ya cargados. Las diferencias de nombre
+  se muestran como aviso. Los alumnos que están en esos cursos pero no en la planilla se listan aparte.
+- Error, no se aplica: CI vacía, CI repetida en la planilla, especialidad desconocida.
+- Revisar, no se crea: la CI no existe pero hay un alumno con el mismo nombre (probablemente sin CI cargada).
+- Si falta el curso (por ejemplo, la promoción nueva), se crea al aplicar.
+
+Siempre muestra una vista previa y pide confirmación antes de escribir.

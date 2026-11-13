@@ -20,6 +20,7 @@ OutputBaseFilename=CargaCTN-Setup-{#Version}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=icono.ico
 UninstallDisplayIcon={app}\CargaCTN.exe
 
 [Languages]

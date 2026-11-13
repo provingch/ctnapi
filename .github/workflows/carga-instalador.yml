@@ -41,6 +41,7 @@ jobs:
       - name: Ejecutable
         run: >
           pyinstaller --noconfirm --windowed --name CargaCTN
+          --icon tools/carga-local/icono.ico
           --add-data "tools/carga-local/index.html;."
           --add-data "tools/carga-local/app.js;."
           --paths tools/carga-local

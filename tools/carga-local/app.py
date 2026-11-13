@@ -11,7 +11,7 @@ from pathlib import Path
 
 import server
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 TITULO = f"Carga de datos CTN {VERSION}"
 
 

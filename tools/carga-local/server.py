@@ -214,9 +214,21 @@ class Handler(BaseHTTPRequestHandler):
         self._json(403, {"ok": False, "error": "CORS no permitido"})
 
 
+def contexto_tls() -> ssl.SSLContext:
+    """Certificados raíz de certifi (van dentro del programa: el Python empaquetado no encuentra los del
+    sistema en otra PC) más los del sistema operativo, por si hay una CA propia."""
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(cafile=certifi.where())
+    except ImportError:
+        pass
+    return ctx
+
+
 def iniciar_servidor(cfg: dict) -> ThreadingHTTPServer:
     """Levanta el proxy en 127.0.0.1 (en un hilo). Si el puerto está ocupado usa uno libre."""
-    Handler.ssl_ctx = ssl.create_default_context() if cfg["verificar_tls"] else ssl._create_unverified_context()
+    Handler.ssl_ctx = contexto_tls() if cfg["verificar_tls"] else ssl._create_unverified_context()
     try:
         srv = ThreadingHTTPServer(("127.0.0.1", cfg["puerto"]), Handler)
     except OSError:

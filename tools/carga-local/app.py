@@ -4,13 +4,14 @@ Levanta el proxy local (server.py) y muestra la página en una ventana propia (p
 WebView2 de Windows). Al cerrar la ventana termina el programa. Si la ventana no se puede crear, abre el
 navegador y deja una ventanita para salir.
 """
+import os
 import sys
 import webbrowser
 from pathlib import Path
 
 import server
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 TITULO = f"Carga de datos CTN {VERSION}"
 
 
@@ -33,7 +34,20 @@ def ventana_de_respaldo(direccion: str):
     raiz.mainloop()
 
 
+def limpiar_entorno_para_hijos():
+    """PyInstaller en Linux pone LD_LIBRARY_PATH apuntando a sus librerías empaquetadas; el navegador que
+    abrimos lo heredaría y arrancaría con esas librerías viejas (falla o no abre). Este proceso ya cargó lo
+    suyo al iniciar, así que se puede restaurar el valor original para los procesos hijos."""
+    if getattr(sys, "frozen", False) and sys.platform.startswith("linux"):
+        original = os.environ.pop("LD_LIBRARY_PATH_ORIG", None)
+        if original is not None:
+            os.environ["LD_LIBRARY_PATH"] = original
+        else:
+            os.environ.pop("LD_LIBRARY_PATH", None)
+
+
 def main():
+    limpiar_entorno_para_hijos()
     cfg = server.cargar_config(Path(server.AQUI) / "config.ini")
     srv = server.iniciar_servidor(cfg)
     direccion = f"http://127.0.0.1:{cfg['puerto']}"

@@ -5,6 +5,10 @@ Chromium a ~50 idiomas. La ventana solo usa Qt WebEngine Widgets. Este script:
   1. Calcula, con ldd, qué librerías de Qt6/lib necesitan los módulos de PyQt6 incluidos, los plugins y
      QtWebEngineProcess, y borra el resto de libQt6*.
   2. Borra los QML y las traducciones que no sean español o inglés.
+  3. Quita librerías base del sistema que PyInstaller copia desde la máquina de compilación (libstdc++,
+     zlib, X11/xcb, drm, gbm, wayland…). Tienen que ser las de la PC: el driver de video (Mesa) las usa y,
+     con las versiones viejas del paquete, no carga ("EGL not available", "Could not initialize GLX").
+     Se dejan las de xcb que suelen faltar en las distros (cursor, util, image, keysyms, icccm…).
 
 Uso (después de pyinstaller):  python podar_qt.py dist/CargaCTN
 """
@@ -15,6 +19,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+DEL_SISTEMA = re.compile(
+    r"^lib(stdc\+\+|gcc_s|z|zstd|expat|X11|X11-xcb|Xext|Xau|Xdmcp|Xrender|Xfixes|Xi|xcb|drm|gbm|wayland-\w+|"
+    r"xcb-(glx|dri2|dri3|present|randr|xfixes|shm|sync|render|shape|xkb|xinput))\.so(\.\d+)*$")
 CONSERVAR_IDIOMAS = re.compile(r"^(es|en)([-_].*)?\.(pak|qm)$|^qt(base|webengine)?_(es|en)\.qm$")
 
 
@@ -53,6 +60,11 @@ def main(raiz: Path):
     for f in (qt / "translations").rglob("*"):
         if f.is_file() and not CONSERVAR_IDIOMAS.match(f.name):
             f.unlink()
+
+    for f in list(raiz.rglob("*.so*")):
+        if DEL_SISTEMA.match(f.name) and "PyQt6" not in f.parts:
+            f.unlink()
+            print(f"  del sistema: {f.name}")
 
     despues = sum(f.stat().st_size for f in raiz.rglob("*") if f.is_file())
     print(f"podar_qt: {borradas} librerías Qt quitadas, {antes / 2**20:.0f} MB → {despues / 2**20:.0f} MB")

@@ -25,11 +25,53 @@ async function api(metodo, ruta, cuerpo) {
   let data = {};
   try { data = await r.json(); } catch { /* respuesta vacía */ }
   if (!r.ok || data.ok === false) {
+    if (data.sinClave) pedirClave(data.error);
     const e = new Error(data.error || data.message || `Error ${r.status}`);
     e.status = r.status;
     throw e;
   }
   return data.datos;
+}
+
+async function sesion(metodo = 'GET', cuerpo) {
+  const r = await fetch('/_sesion', {
+    method: metodo,
+    headers: { 'X-Carga-Local': '1', ...(cuerpo ? { 'Content-Type': 'application/json' } : {}) },
+    body: cuerpo ? JSON.stringify(cuerpo) : undefined,
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) throw new Error(d.error || `Error ${r.status}`);
+  return d.datos;
+}
+
+// Pantalla de clave: se muestra la primera vez o si la clave guardada deja de valer.
+function pedirClave(aviso) {
+  $('#tabs').hidden = true;
+  $('#salir').hidden = true;
+  const input = h('input', { type: 'password', autocomplete: 'off', placeholder: 'Clave de carga', size: 40, required: true });
+  const error = h('p', { class: 'err' }, aviso && !/falta/i.test(aviso) ? aviso : '');
+  const f = h('form', { class: 'clave' },
+    h('h2', {}, 'Ingresá la clave de carga'),
+    h('p', { class: 'mute' }, 'Se pide una sola vez: queda guardada en esta computadora. Si no la tenés, pedila a Informática.'),
+    h('div', { class: 'barra' }, input, h('button', { class: 'b', type: 'submit' }, 'Entrar')), error);
+  f.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = f.querySelector('button');
+    btn.disabled = true;
+    error.textContent = 'Verificando…';
+    try {
+      await sesion('POST', { clave: input.value });
+      input.value = '';
+      await entrar();
+    } catch (e) {
+      error.textContent = e.message;
+      btn.disabled = false;
+      input.select();
+    }
+  });
+  $('#vista').replaceChildren(f);
+  msg('');
+  input.focus();
 }
 
 function msg(texto, tipo = 'ok') {
@@ -101,7 +143,6 @@ function formulario(campos, valores, onGuardar, onCancelar) {
 }
 
 function errorTexto(e) {
-  if (e.status === 503) return `${e.message}. (La escritura se habilita en el corte: CORE_WRITE_ENABLED=true.)`;
   return e.message;
 }
 
@@ -498,25 +539,40 @@ async function mostrar(nombre) {
   await refrescar();
 }
 
-async function iniciar() {
-  const tabs = $('#tabs');
-  for (const [k, v] of Object.entries(vistas)) tabs.append(h('button', { type: 'button', 'data-v': k, onclick: () => { msg(''); mostrar(k); } }, v.titulo));
-  try {
-    const r = await fetch('/_destino', { headers: { 'X-Carga-Local': '1' } });
-    const d = (await r.json()).datos;
-    const el = $('#destino');
-    el.textContent = d.nombre;
-    el.title = d.url;
-    el.className = /prod/i.test(d.nombre) ? 'aviso' : '';
-  } catch { /* sin destino */ }
+async function entrar() {
+  $('#tabs').hidden = false;
+  $('#salir').hidden = false;
   try {
     await cargarCatalogos();
     $('#estado').textContent = `Conectado · ${cat.cursos.length} cursos, ${cat.perfiles.length} usuarios`;
   } catch (e) {
     $('#estado').textContent = '';
-    msg(`No se pudo leer ctnapi: ${errorTexto(e)}`, 'err');
+    if (!$('#tabs').hidden) msg(`No se pudo leer ctnapi: ${errorTexto(e)}`, 'err');
+    return;
   }
   await mostrar(actual);
+}
+
+async function iniciar() {
+  const tabs = $('#tabs');
+  for (const [k, v] of Object.entries(vistas)) tabs.append(h('button', { type: 'button', 'data-v': k, onclick: () => { msg(''); mostrar(k); } }, v.titulo));
+  $('#salir').addEventListener('click', async () => {
+    if (!confirm('¿Olvidar la clave guardada en esta computadora? Se va a pedir de nuevo.')) return;
+    await sesion('DELETE');
+    $('#estado').textContent = '';
+    pedirClave();
+  });
+  let s;
+  try {
+    s = await sesion();
+  } catch (e) {
+    msg(`No responde la herramienta local: ${e.message}`, 'err');
+    return;
+  }
+  const el = $('#destino');
+  el.textContent = s.nombre;
+  el.title = s.url;
+  if (s.conClave) await entrar(); else pedirClave();
 }
 
 iniciar();

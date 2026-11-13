@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
-@RequestMapping("/api/core/v1")
+@RequestMapping({"/api/core/v1", "/api/carga/v1"})
 @Validated
 public class CoreController {
 

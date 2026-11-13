@@ -8,7 +8,8 @@ server:
   forward-headers-strategy: native
   tomcat:
     remoteip:
-      internal-proxies: 127\.0\.0\.1|::1
+      # Agregar la IP del nginx de borde (TRUSTED_PROXIES) para que el bloqueo por IP use la IP real del cliente.
+      internal-proxies: ${TRUSTED_PROXIES:127\.0\.0\.1|::1}
   servlet:
     encoding:
       charset: UTF-8
@@ -33,6 +34,9 @@ ctnapi:
   jwt-secret: ${CTNAPI_JWT_SECRET}
   # Clave de servicio independiente para el núcleo escolar. Vacía = endpoints deshabilitados (503).
   core-api-key: ${CORE_API_KEY:}
+  # Clave de los responsables de carga (tools/carga-local) para /api/carga/v1, la misma API del núcleo expuesta
+  # por la URL pública. Distinta de CORE_API_KEY. Vacía = /api/carga deshabilitada (503).
+  carga-api-key: ${CARGA_API_KEY:}
   # SCA sigue siendo la autoridad: escritura directa en el Core de ctnapi queda apagada hasta el corte.
   core-write-enabled: ${CORE_WRITE_ENABLED:false}
   core-sync:

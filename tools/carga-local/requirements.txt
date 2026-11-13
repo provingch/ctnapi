@@ -1,4 +1,6 @@
 xlrd==2.0.1
 openpyxl==3.1.5
-# Ventana propia solo en Windows (WebView2). En Linux se usa el navegador.
+certifi==2024.8.30
+# Ventana propia: en Windows con WebView2 (del sistema), en Linux con Qt WebEngine (empaquetado).
 pywebview>=5.0,<6; sys_platform == "win32"
+pywebview[qt]>=5.0,<6; sys_platform == "linux"

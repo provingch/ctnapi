@@ -66,7 +66,9 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Dependencias
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q libtk8.6  # ventanita para cerrar el programa
+          # libtk: ventanita de respaldo. libxcb-cursor0 y compañía: Qt los necesita para la ventana en X11;
+          # instalados acá, PyInstaller los incluye en el AppImage.
+          sudo apt-get update -q && sudo apt-get install -y -q libtk8.6 libxcb-cursor0 libxkbcommon-x11-0 libegl1
           pip install -r tools/carga-local/requirements.txt "pyinstaller>=6.10,<7"
           python -c "import tkinter"
       - name: Ejecutable
@@ -76,6 +78,8 @@ jobs:
           --add-data "tools/carga-local/app.js:."
           --paths tools/carga-local
           tools/carga-local/app.py
+      - name: Quitar partes de Qt que no se usan
+        run: python tools/carga-local/podar_qt.py dist/CargaCTN
       - name: AppImage
         run: |
           V="${{ needs.version.outputs.version }}"

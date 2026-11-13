@@ -12,8 +12,8 @@ Bajar el instalador de la última versión en GitHub (Releases, tag `carga-vX.Y.
   directo en el escritorio. Se abre en su propia ventana, con el motor Edge WebView2 que ya trae Windows 10/11.
   Si no está disponible, se abre en el navegador. Como el instalador no está firmado, Windows SmartScreen
   puede avisar: «Más información» → «Ejecutar de todas formas».
-- **Linux**: `CargaCTN-X.Y.Z-x86_64.AppImage`. Se marca como ejecutable (`chmod +x`) y se abre. Usa el
-  navegador y una ventanita para cerrar el programa.
+- **Linux**: `CargaCTN-X.Y.Z-x86_64.AppImage`. Se marca como ejecutable (`chmod +x`) y se abre en su propia
+  ventana (Qt WebEngine, va incluido: por eso pesa ~200 MB). Si la ventana no se puede crear, usa el navegador.
 
 No hace falta Python ni LibreOffice: todo va incluido.
 

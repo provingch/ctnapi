@@ -82,7 +82,8 @@ jobs:
           mkdir -p AppDir/usr/bin
           cp -r dist/CargaCTN/. AppDir/usr/bin/
           cp tools/carga-local/carga-ctn.desktop AppDir/
-          cp tools/carga-local/icono.svg AppDir/carga-ctn.svg
+          cp tools/carga-local/icono.png AppDir/carga-ctn.png
+          ln -s carga-ctn.png AppDir/.DirIcon
           printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/usr/bin/CargaCTN" "$@"\n' > AppDir/AppRun
           chmod +x AppDir/AppRun
           curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage

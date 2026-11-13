@@ -214,15 +214,7 @@ chown ctnapi:ctnapi /var/backups/ctnapi && chmod 700 /var/backups/ctnapi
 #    Editar deploy/db-grants.sql: host autorizado y contraseñas seguras.
 mysql -u root -p < deploy/db-grants.sql
 
-# Solo en una base descartable de desarrollo/prueba, nunca en producción todavía:
-# 007/008 crean y siembran catálogos; definir primero cómo importar los datos históricos y preservar sus IDs.
-mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/001_nucleo_escolar.sql
-mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/007_anotaciones.sql
-mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/008_tipos_anotacion_coordinacion.sql
-mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/009_enfermeria.sql
-mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/013_enfermeria_personal.sql
-# 014 es idempotente y también hay que correrla en producción antes de desplegar el JAR que lee alumno.email/telefono.
-mariadb -h ctnapi-db -u root -p ctnapi_db < database/migrations/014_alumno_email_telefono.sql
+# Las migraciones de database/migrations las aplica deploy.sh (ver "Migraciones" más abajo).
 
 # 3) Crear la configuración de runtime una sola vez: completar IPs, claves y credenciales reales.
 cp deploy/ctnapi.env.example /etc/ctnapi/ctnapi.env
@@ -238,11 +230,40 @@ ln -s /etc/nginx/sites-available/ctnapi /etc/nginx/sites-enabled/ && nginx -t &&
 certbot --nginx -d TU_DOMINIO
 ```
 
-`deploy.sh` sigue el flujo de SCA: actualiza el checkout con `git pull --ff-only`, ejecuta `mvn clean verify`,
-instala el JAR, el unit de systemd y `scripts/backup-db.sh`, reinicia el servicio y comprueba `/health`. Si el health
-check falla, restaura el JAR previo. Requiere un checkout limpio, JDK 17+, Maven y sudo/root; la cuenta de servicio y
-`/etc/ctnapi/ctnapi.env` deben existir antes del primer deploy. El script no instala paquetes, no modifica el `.env`,
-no toca nginx y **no ejecuta migraciones ni importa datos**.
+### deploy.sh
+
+En una terminal, `./deploy.sh` abre un menú. Sin terminal, o con `--update`, hace el deploy completo
+(`./deploy.sh --help` lista todas las acciones):
+
+1. Verifica requisitos y que el checkout esté limpio. Después actualiza con `git pull --ff-only`.
+2. Corre `mvn clean verify`. Si fallan las pruebas, no despliega nada.
+3. Instala el backup diario: script, servicio y timer. El timer solo se activa si existe `/etc/ctnapi/backup.cnf`.
+4. **Migraciones**: compara `database/migrations/` con la tabla `ctnapi_migracion`. Si hay pendientes, hace un
+   backup y las aplica como root, en orden. Si una falla, se detiene y no despliega. Sin terminal, las pendientes
+   frenan el deploy salvo que se pase `APLICAR_MIGRACIONES=1`.
+5. Instala el JAR de forma atómica, reinicia y comprueba `/health`. Si falla, restaura el JAR anterior. Las
+   migraciones no se revierten, porque son aditivas.
+
+Otras acciones: `--estado` (servicio, health, último backup, sync/escritura del Core y migraciones), `--backup`,
+`--migraciones`, `--logs`. Todo queda registrado en `/var/log/ctnapi/deploy.log`.
+
+El script no instala paquetes, no modifica el `.env`, no toca nginx y no importa datos.
+
+### Migraciones
+
+Las migraciones aplicadas quedan registradas en `ctnapi_migracion` con su sha256. Si se edita una que ya
+estaba aplicada, `--estado` la marca como **MODIFICADA**: hay que revisarla a mano, porque no se vuelve a correr.
+Los cambios de esquema siempre van en un archivo nuevo.
+
+**Adopción (una sola vez):** las migraciones que ya se aplicaron a mano antes de este registro hay que marcarlas
+sin ejecutarlas. Primero verificá en la base que estén aplicadas:
+
+```bash
+./deploy.sh --registrar-migraciones        # todas las actuales; o "--registrar-migraciones 013" para hasta la 013
+```
+
+Para una base remota: `DB_ADMIN_ARGS="-h ctnapi-db -u root -p" ./deploy.sh ...`. Por defecto se usa el socket local
+como root.
 
 ## Copias de seguridad (todos los días a las 20:00, hora de Paraguay)
 
@@ -251,23 +272,18 @@ no toca nginx y **no ejecuta migraciones ni importa datos**.
 servicio queda en estado `failed`) y borra las copias de más de 14 días. Lo dispara un timer de systemd con
 `OnCalendar=*-*-* 20:00:00 America/Asuncion` y `Persistent=true` (si el contenedor estaba apagado a las 20:00, corre al arrancar).
 
-`deploy.sh` instala y actualiza el script en `/opt/ctnapi/scripts/`. Las dos líneas `install` de esa ruta solo hacen
-falta para configurar los backups antes del primer deploy.
+`deploy.sh` instala el script, el servicio y el timer, y crea la carpeta. Solo hay que crear las credenciales
+una vez. Después, `./deploy.sh --instalar-backup` (o el próximo deploy) activa el timer:
 
 ```bash
-install -d -o ctnapi -g ctnapi -m 700 /var/backups/ctnapi  # debe existir antes de arrancar el servicio
-install -d -o root -g root -m 755 /opt/ctnapi/scripts
-install -o root -g root -m 755 scripts/backup-db.sh /opt/ctnapi/scripts/backup-db.sh
-
 cp deploy/backup.env.example /etc/ctnapi/backup.env       # host privado de la base y retención
 cp deploy/backup.cnf.example /etc/ctnapi/backup.cnf       # usuario ctnapi_backup + clave
 chown ctnapi:ctnapi /etc/ctnapi/backup.cnf && chmod 600 /etc/ctnapi/backup.cnf
-cp deploy/ctnapi-backup.service deploy/ctnapi-backup.timer /etc/systemd/system/
-systemctl daemon-reload && systemctl enable --now ctnapi-backup.timer
+./deploy.sh --instalar-backup
 
-systemctl list-timers ctnapi-backup.timer        # próxima ejecución
-systemctl start ctnapi-backup.service            # probar ahora
-journalctl -u ctnapi-backup.service -n 20        # resultado
+./deploy.sh --backup                             # probar ahora
+./deploy.sh --estado                             # timer y último backup
+journalctl -u ctnapi-backup.service -n 20        # detalle
 ```
 
 - **Restaurar**: `gunzip -c ctnapi-AAAAMMDD-HHMMSS.sql.gz | mariadb -h ctnapi-db -u root -p ctnapi_db`

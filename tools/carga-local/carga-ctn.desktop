@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Carga CTN
+Comment=Carga de datos del Colegio Técnico Nacional (ctnapi)
+Exec=CargaCTN
+Icon=carga-ctn
+Categories=Office;Education;
+Terminal=false

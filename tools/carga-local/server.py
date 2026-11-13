@@ -22,7 +22,8 @@ from pathlib import Path
 
 import planilla
 
-AQUI = Path(__file__).resolve().parent
+# En el .exe (PyInstaller) los archivos de la página están en sys._MEIPASS.
+AQUI = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 PREFIJO = "/api/core/v1/"          # rutas que usa la página
 PREFIJO_REMOTO = "/api/carga/v1/"  # API pública de carga en ctnapi
 URL_DEFECTO = "https://ctapin.duckdns.org"
@@ -213,27 +214,35 @@ class Handler(BaseHTTPRequestHandler):
         self._json(403, {"ok": False, "error": "CORS no permitido"})
 
 
+def iniciar_servidor(cfg: dict) -> ThreadingHTTPServer:
+    """Levanta el proxy en 127.0.0.1 (en un hilo). Si el puerto está ocupado usa uno libre."""
+    Handler.ssl_ctx = ssl.create_default_context() if cfg["verificar_tls"] else ssl._create_unverified_context()
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", cfg["puerto"]), Handler)
+    except OSError:
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    cfg["puerto"] = srv.server_address[1]
+    Handler.cfg = cfg
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", default=str(AQUI / "config.ini"), help="opcional: url/puerto distintos (pruebas)")
     ap.add_argument("--no-abrir", action="store_true", help="no abrir el navegador")
     a = ap.parse_args()
     cfg = cargar_config(Path(a.config))
-    Handler.cfg = cfg
-    Handler.ssl_ctx = ssl.create_default_context() if cfg["verificar_tls"] else ssl._create_unverified_context()
-    try:
-        srv = ThreadingHTTPServer(("127.0.0.1", cfg["puerto"]), Handler)
-    except OSError:
-        sys.exit(f"El puerto {cfg['puerto']} está ocupado: ¿ya está abierta la herramienta? Probá en http://127.0.0.1:{cfg['puerto']}")
+    srv = iniciar_servidor(cfg)
     direccion = f"http://127.0.0.1:{cfg['puerto']}"
     print(f"Carga de datos → {cfg['url']}")
-    print(f"Abierto en {direccion}  (cerrá esta ventana o Ctrl+C para salir)")
+    print(f"Abierto en {direccion}  (Ctrl+C para salir)")
     if not a.no_abrir:
-        threading.Timer(0.5, webbrowser.open, args=(direccion,)).start()
+        webbrowser.open(direccion)
     try:
-        srv.serve_forever()
+        threading.Event().wait()
     except KeyboardInterrupt:
-        pass
+        srv.shutdown()
 
 
 if __name__ == "__main__":

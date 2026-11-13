@@ -6,13 +6,32 @@ importación de las planillas de Secretaría. Se usa desde la PC de cada respons
 
 ## Instalar en una PC
 
-1. Instalar **Python 3.10+** (python.org; en Windows marcar «Add python.exe to PATH») y, para importar
-   planillas, **LibreOffice**.
-2. Copiar esta carpeta (`tools/carga-local`) a la PC.
-3. Abrir: Windows → doble clic en `iniciar.bat`; Linux/Mac → `python3 server.py`. Se abre el navegador solo.
-4. La primera vez pide la **clave de carga** (`CARGA_API_KEY` del servidor). Se valida contra ctnapi y queda
-   guardada en la PC (`%APPDATA%\ctnapi-carga\clave` o `~/.config/ctnapi-carga/clave`, solo legible por el usuario).
-   «Cambiar clave» la olvida.
+Bajar el instalador de la última versión en GitHub (Releases, tag `carga-vX.Y.Z`):
+
+- **Windows**: `CargaCTN-Setup-X.Y.Z.exe`. Se instala sin pedir permisos de administrador y crea un acceso
+  directo en el escritorio. Se abre en su propia ventana, con el motor Edge WebView2 que ya trae Windows 10/11.
+  Si no está disponible, se abre en el navegador. Como el instalador no está firmado, Windows SmartScreen
+  puede avisar: «Más información» → «Ejecutar de todas formas».
+- **Linux**: `CargaCTN-X.Y.Z-x86_64.AppImage`. Se marca como ejecutable (`chmod +x`) y se abre. Usa el
+  navegador y una ventanita para cerrar el programa.
+
+No hace falta Python ni LibreOffice: todo va incluido.
+
+La primera vez pide la **clave de carga** (`CARGA_API_KEY` del servidor). Se valida contra ctnapi y queda
+guardada en la PC (`%APPDATA%\ctnapi-carga\clave` o `~/.config/ctnapi-carga/clave`), solo legible por el
+usuario. «Cambiar clave» la olvida.
+
+## Publicar una versión nueva
+
+1. Subir `VERSION` en `app.py`.
+2. Mergear a `main` y crear el tag: `git tag carga-v1.0.1 && git push origin carga-v1.0.1`.
+3. `.github/workflows/carga-instalador.yml` compila el `.exe` (Windows) y el `.AppImage` (Linux) y los
+   publica en un Release. En los PRs quedan como artefactos del run, para probarlos antes.
+
+## Desarrollo
+
+Para correrlo sin compilar: `pip install -r requirements.txt` y `python3 server.py` (navegador) o
+`python3 app.py` (ventana). Con un `config.ini` (ver `config.example.ini`) apunta a un ctnapi de prueba.
 
 ## Seguridad
 
@@ -21,12 +40,10 @@ importación de las planillas de Secretaría. Se usa desde la PC de cada respons
 - ctnapi bloquea por IP tras 5 claves incorrectas (30 s, luego 2, 10 y 30 min).
 - La página solo habla con el proxy local (`server.py`), que escucha en 127.0.0.1, agrega la clave y rechaza
   pedidos de otros sitios (valida `Host`/`Origin`, header propio, sin CORS).
-- `config.ini` es opcional y solo sirve para apuntar a un ctnapi de prueba.
 
 ## Importar planillas de Secretaría
 
-Pestaña **Importar**: acepta las «LISTAS <n> CURSO <año> SG.xls» (también .xlsx/.ods). Necesita
-**LibreOffice** instalado (`soffice`), que convierte la planilla. La lectura está en `planilla.py`
+Pestaña **Importar**: acepta las «LISTAS <n> CURSO <año> SG.xls» (también .xlsx). La lectura está en `planilla.py`
 (`python3 planilla.py archivo.xls` muestra los bloques leídos).
 
 Formato: una hoja por especialidad y un bloque por sección («Especialidad: … Curso: 1er Curso»,

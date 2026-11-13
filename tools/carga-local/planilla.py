@@ -9,59 +9,51 @@ Formato: una hoja por especialidad y, dentro de cada hoja, un bloque por secció
     ...
     Año 2026        Secretaria General CTN
 
-El .xls (o .xlsx/.ods) se convierte a CSV con LibreOffice, que tiene que estar instalado.
+Lee .xls (xlrd) y .xlsx (openpyxl) directamente; no hace falta LibreOffice.
 """
-import csv
+import io
 import re
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 
 RE_ESPECIALIDAD = re.compile(r"Especialidad:\s*(.+?)\s+Curso:\s*(\d+)", re.I)
 RE_SECCION = re.compile(r"Secci[oó]n:\s*([A-Za-z])\b", re.I)
 RE_ANIO = re.compile(r"\bA[ñn]o\s+(\d{4})\b", re.I)
 RE_ANIO_ARCHIVO = re.compile(r"\b(20\d{2})\b")
-EXTENSIONES = {".xls", ".xlsx", ".ods"}
-# CSV UTF-8, separado por comas, todas las hojas (-1): un archivo <nombre>-<hoja>.csv por hoja.
-FILTRO_CSV = "csv:Text - txt - csv (StarCalc):44,34,76,1,,0,false,true,false,false,false,-1"
 
 
 class ErrorPlanilla(Exception):
     pass
 
 
-def _soffice() -> str:
-    for nombre in ("soffice", "libreoffice"):
-        if ruta := shutil.which(nombre):
-            return ruta
-    for ruta in (r"C:\Program Files\LibreOffice\program\soffice.exe",
-                 "/Applications/LibreOffice.app/Contents/MacOS/soffice"):
-        if Path(ruta).is_file():
-            return ruta
-    raise ErrorPlanilla("No se encontró LibreOffice (soffice); hace falta para leer la planilla.")
+def _texto(valor) -> str:
+    if valor is None:
+        return ""
+    if isinstance(valor, float) and valor.is_integer():  # 7090557.0 → "7090557"
+        return str(int(valor))
+    return str(valor).strip()
 
 
-def _a_csv(contenido: bytes, nombre: str, tmp: Path) -> list[Path]:
+def _hojas(contenido: bytes, nombre: str):
+    """Devuelve [(nombre_hoja, filas)] con cada fila como lista de textos."""
     ext = Path(nombre).suffix.lower()
-    if ext not in EXTENSIONES:
-        raise ErrorPlanilla(f"Formato no soportado: {ext or '(sin extensión)'}. Usar .xls, .xlsx u .ods.")
-    origen = tmp / f"planilla{ext}"
-    origen.write_bytes(contenido)
-    salida = tmp / "csv"
     try:
-        subprocess.run(
-            [_soffice(), "--headless", "--norestore", f"-env:UserInstallation={(tmp / 'perfil').as_uri()}",
-             "--convert-to", FILTRO_CSV, "--outdir", str(salida), str(origen)],
-            check=True, capture_output=True, timeout=120)
-    except subprocess.TimeoutExpired:
-        raise ErrorPlanilla("LibreOffice tardó demasiado en convertir la planilla.")
-    except subprocess.CalledProcessError as e:
-        raise ErrorPlanilla(f"LibreOffice no pudo convertir la planilla: {e.stderr.decode(errors='replace')[:300]}")
-    hojas = sorted(salida.glob("*.csv"))
-    if not hojas:
-        raise ErrorPlanilla("La planilla no tiene hojas legibles.")
-    return hojas
+        if ext == ".xls":
+            import xlrd
+            libro = xlrd.open_workbook(file_contents=contenido)
+            return [(h.name, [[_texto(c) for c in h.row_values(i)] for i in range(h.nrows)]) for h in libro.sheets()]
+        if ext == ".xlsx":
+            import openpyxl
+            libro = openpyxl.load_workbook(io.BytesIO(contenido), read_only=True, data_only=True)
+            try:
+                return [(h.title, [[_texto(c) for c in fila] for fila in h.iter_rows(values_only=True)])
+                        for h in libro.worksheets]
+            finally:
+                libro.close()
+    except ImportError as e:
+        raise ErrorPlanilla(f"Falta la librería para leer {ext}: {e.name}")
+    except Exception as e:  # archivo dañado o con otro formato real
+        raise ErrorPlanilla(f"No se pudo leer la planilla: {e}")
+    raise ErrorPlanilla(f"Formato no soportado: {ext or '(sin extensión)'}. Usar .xls o .xlsx.")
 
 
 def _ci(valor: str) -> str:
@@ -71,36 +63,34 @@ def _ci(valor: str) -> str:
     return re.sub(r"\D", "", valor)
 
 
-def _hoja(ruta: Path) -> list[dict]:
-    nombre_hoja = ruta.stem.split("-", 1)[1].strip() if "-" in ruta.stem else ruta.stem
+def _hoja(nombre_hoja: str, filas: list[list[str]]) -> list[dict]:
     bloques, actual, anio = [], None, None
-    with ruta.open(encoding="utf-8", newline="") as f:
-        for nro_fila, fila in enumerate(csv.reader(f), start=1):
-            celdas = [c.strip() for c in fila]
-            texto = "  ".join(c for c in celdas if c)
-            if not texto:
-                continue
-            if m := RE_ANIO.search(texto):
-                anio = int(m.group(1))
-            if m := RE_ESPECIALIDAD.search(texto):
-                actual = {"hoja": nombre_hoja, "especialidad": m.group(1).strip(), "nivel": int(m.group(2)),
-                          "seccion": None, "anio": None, "alumnos": [], "avisos": []}
-                bloques.append(actual)
-                continue
-            if actual is None:
-                continue
-            if m := RE_SECCION.search(texto):
-                actual["seccion"] = m.group(1).upper()
-                continue
-            if len(celdas) >= 2 and re.fullmatch(r"\d+(\.0+)?", celdas[0]) and celdas[1]:
-                completo = re.sub(r"\s+", " ", celdas[1]).strip()
-                if "," in completo:
-                    apellido, nombre = (p.strip() for p in completo.split(",", 1))
-                else:
-                    apellido, nombre = completo, ""
-                    actual["avisos"].append(f"Fila {nro_fila}: «{completo}» no tiene coma entre apellidos y nombres.")
-                actual["alumnos"].append({"fila": nro_fila, "apellido": apellido.upper(), "nombre": nombre.upper(),
-                                          "ci": _ci(celdas[2]) if len(celdas) > 2 else ""})
+    for nro_fila, celdas in enumerate(filas, start=1):
+        celdas = [c.strip() for c in celdas]
+        texto = "  ".join(c for c in celdas if c)
+        if not texto:
+            continue
+        if m := RE_ANIO.search(texto):
+            anio = int(m.group(1))
+        if m := RE_ESPECIALIDAD.search(texto):
+            actual = {"hoja": nombre_hoja.strip(), "especialidad": m.group(1).strip(), "nivel": int(m.group(2)),
+                      "seccion": None, "anio": None, "alumnos": [], "avisos": []}
+            bloques.append(actual)
+            continue
+        if actual is None:
+            continue
+        if m := RE_SECCION.search(texto):
+            actual["seccion"] = m.group(1).upper()
+            continue
+        if len(celdas) >= 2 and re.fullmatch(r"\d+(\.0+)?", celdas[0]) and celdas[1]:
+            completo = re.sub(r"\s+", " ", celdas[1]).strip()
+            if "," in completo:
+                apellido, nombre = (p.strip() for p in completo.split(",", 1))
+            else:
+                apellido, nombre = completo, ""
+                actual["avisos"].append(f"Fila {nro_fila}: «{completo}» no tiene coma entre apellidos y nombres.")
+            actual["alumnos"].append({"fila": nro_fila, "apellido": apellido.upper(), "nombre": nombre.upper(),
+                                      "ci": _ci(celdas[2]) if len(celdas) > 2 else ""})
     # El "Año NNNN" está al pie de cada bloque: vale para todos los bloques de la hoja.
     for b in bloques:
         b["anio"] = anio
@@ -110,8 +100,7 @@ def _hoja(ruta: Path) -> list[dict]:
 
 
 def leer(contenido: bytes, nombre: str) -> list[dict]:
-    with tempfile.TemporaryDirectory(prefix="carga-ctnapi-") as d:
-        bloques = [b for hoja in _a_csv(contenido, nombre, Path(d)) for b in _hoja(hoja)]
+    bloques = [b for hoja, filas in _hojas(contenido, nombre) for b in _hoja(hoja, filas)]
     if not bloques:
         raise ErrorPlanilla("No se encontró ningún bloque «Especialidad: … Curso: …» en la planilla.")
     anio_archivo = RE_ANIO_ARCHIVO.search(nombre)

@@ -1,0 +1,108 @@
+# Compila Carga CTN (tools/carga-local): instalador .exe para Windows y .AppImage para Linux.
+# - En cada PR o push a main que toque tools/carga-local: quedan como artefactos del run (Actions → run → Artifacts).
+# - Con un tag carga-vX.Y.Z: además se publica un Release con los dos archivos.
+name: Carga CTN - instaladores
+
+on:
+  push:
+    branches: [main]
+    paths: ["tools/carga-local/**", ".github/workflows/carga-instalador.yml"]
+    tags: ["carga-v*"]
+  pull_request:
+    paths: ["tools/carga-local/**", ".github/workflows/carga-instalador.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "version=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' tools/carga-local/app.py)" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Dependencias
+        run: pip install -r tools/carga-local/requirements.txt "pyinstaller>=6.10,<7"
+      - name: Ejecutable
+        run: >
+          pyinstaller --noconfirm --windowed --name CargaCTN
+          --add-data "tools/carga-local/index.html;."
+          --add-data "tools/carga-local/app.js;."
+          --paths tools/carga-local
+          tools/carga-local/app.py
+      - name: Instalador (Inno Setup)
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DVersion=${{ needs.version.outputs.version }}" tools\carga-local\instalador.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CargaCTN-Windows
+          path: dist-instalador/*.exe
+
+  linux:
+    needs: version
+    # glibc vieja = el AppImage corre en más distribuciones.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Dependencias
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q libtk8.6  # ventanita para cerrar el programa
+          pip install -r tools/carga-local/requirements.txt "pyinstaller>=6.10,<7"
+          python -c "import tkinter"
+      - name: Ejecutable
+        run: >
+          pyinstaller --noconfirm --name CargaCTN
+          --add-data "tools/carga-local/index.html:."
+          --add-data "tools/carga-local/app.js:."
+          --paths tools/carga-local
+          tools/carga-local/app.py
+      - name: AppImage
+        run: |
+          V="${{ needs.version.outputs.version }}"
+          mkdir -p AppDir/usr/bin
+          cp -r dist/CargaCTN/. AppDir/usr/bin/
+          cp tools/carga-local/carga-ctn.desktop AppDir/
+          cp tools/carga-local/icono.svg AppDir/carga-ctn.svg
+          printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/usr/bin/CargaCTN" "$@"\n' > AppDir/AppRun
+          chmod +x AppDir/AppRun
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          mkdir -p dist-instalador
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir "dist-instalador/CargaCTN-$V-x86_64.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CargaCTN-Linux
+          path: dist-instalador/*.AppImage
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/carga-v')
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefactos
+          merge-multiple: true
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artefactos/* --repo "$GITHUB_REPOSITORY" --title "Carga CTN ${GITHUB_REF_NAME#carga-v}" --notes "Instalador de Windows (.exe) y AppImage de Linux."

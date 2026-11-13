@@ -36,6 +36,9 @@
   .err { color:var(--err); }
   details { margin:8px 0; }
   .mute { color:var(--mute); }
+  form.clave { max-width:520px; }
+  form.clave h2 { font-size:16px; margin:0 0 4px; }
+  [hidden] { display:none !important; }
 </style>
 </head>
 <body>
@@ -43,6 +46,7 @@
   <h1>Carga de datos · ctnapi</h1>
   <span id="destino">…</span>
   <span id="estado"></span>
+  <button id="salir" class="s" type="button" hidden style="margin-left:auto">Cambiar clave</button>
 </header>
 <div id="msg"></div>
 <nav id="tabs"></nav>
